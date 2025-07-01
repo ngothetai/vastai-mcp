@@ -37,18 +37,22 @@
 
 3. **Configure MCP client** (for Claude Desktop or other MCP clients):
    
-   Update your MCP configuration file (typically `~/Library/Application Support/Claude/claude_desktop_config.json` for Claude Desktop):
+   Update your MCP configuration file (`~/.cursor/mcp.json` for Cursor):
    ```json
    {
      "mcpServers": {
-       "vast-ai": {
-         "command": "uv",
-         "args": ["tool", "run", "vast-mcp-server"],
-         "env": {
-           "VAST_API_KEY": "your_vast_api_key_here",
-           "SSH_KEY_FILE": "~/.ssh/id_rsa"
-         }
-       }
+        "vast-ai": {
+          "command": "uv",
+          "args": [
+              "run",
+              "vast-mcp-server"
+          ],
+          "env": {
+              "VAST_API_KEY": "your_vast_api_key_here",
+              "SSH_KEY_FILE": "~/.ssh/id_rsa",
+              "SSH_KEY_PUBLIC_FILE": "~/.ssh/id_rsa.pub"
+          }
+        }
      }
    }
    ```
@@ -58,17 +62,6 @@
 1. **Test the server directly**:
    ```bash
    uv tool run vast-mcp-server --help
-   ```
-
-2. **Test API connectivity**:
-   ```bash
-   python -c "
-   import os
-   os.environ['VAST_API_KEY'] = 'your_api_key_here'
-   from server import get_vast_client
-   client = get_vast_client()
-   print('API key configured successfully!' if client.api_key else 'API key missing!')
-   "
    ```
 
 ### SSH Key Setup (Recommended)
@@ -98,25 +91,6 @@ For full functionality, ensure you have SSH keys set up:
 
 - **Network issues**: Ensure you can reach `console.vast.ai` from your network
 
-### Alternative Installation Methods
-
-**Using pip** (if you prefer not to use uv):
-```bash
-pip install -r requirements.txt
-python server.py
-```
-
-**Development setup**:
-```bash
-git clone https://github.com/your-repo/vastai-mcp.git
-cd vastai-mcp
-uv venv
-source .venv/bin/activate  # On macOS/Linux
-uv pip install -r requirements.txt
-python server.py
-```
-
----
 
 # Vast.ai MCP Server Usage Guide
 
@@ -183,7 +157,7 @@ Create a new instance from an offer.
 - `ssh` (optional): Enable SSH access (default: False)
 - `jupyter` (optional): Enable Jupyter notebook (default: False)
 - `direct` (optional): Use direct connections (default: False)
-- `env` (optional): Environment variables and port mappings
+- `env` (optional): Environment variables as dict (default: None)
 - `label` (optional): Label for the instance
 - `bid_price` (optional): Bid price for interruptible instances
 
@@ -198,7 +172,7 @@ create_instance(
     disk=40.0,
     ssh=True,
     direct=True,
-    env="-p 8888:8888 -e JUPYTER_ENABLE_LAB=yes",
+    env={"JUPYTER_ENABLE_LAB": "yes"},
     label="My PyTorch Training"
 )
 ```
@@ -256,7 +230,7 @@ Set a label on an instance for easier identification.
 **Returns:**
 - Success/failure message
 
-### 10. launch_instance(gpu_name: str, num_gpus: int, image: str, region: str = "", disk: float = 16.0, ssh: bool = False, jupyter: bool = False, direct: bool = False, env: str = "", label: str = "", order: str = "score-")
+### 10. launch_instance_workflow(gpu_name: str, num_gpus: int, image: str, region: str = "", disk: float = 16.0, ssh: bool = True, jupyter: bool = False, direct: bool = True, label: str = "")
 Launch the top instance from search offers based on given parameters (streamlined alternative to create_instance).
 
 **Parameters:**
@@ -265,19 +239,17 @@ Launch the top instance from search offers based on given parameters (streamline
 - `image`: Docker image to run
 - `region` (optional): Geographical region preference
 - `disk` (optional): Disk size in GB (default: 16.0)
-- `ssh` (optional): Enable SSH access
-- `jupyter` (optional): Enable Jupyter notebook
-- `direct` (optional): Use direct connections
-- `env` (optional): Environment variables and port mappings
+- `ssh` (optional): Enable SSH access (default: True)
+- `jupyter` (optional): Enable Jupyter notebook (default: False)
+- `direct` (optional): Use direct connections (default: True)
 - `label` (optional): Label for the instance
-- `order` (optional): Sort order for offers (default: "score-")
 
 **Returns:**
 - Success message with instance details or error
 
 **Example:**
 ```
-launch_instance(
+launch_instance_workflow(
     gpu_name="RTX_4090",
     num_gpus=2,
     image="pytorch/pytorch:latest",
@@ -330,22 +302,7 @@ Show detailed information about a specific instance.
   - Cost and runtime information
   - Configuration details
 
-### 15. update_instance(instance_id: int, template_id: int = None, template_hash_id: str = None, image: str = None, env: str = None, onstart: str = None, args: str = None)
-Update instance configuration settings.
-
-**Parameters:**
-- `instance_id`: ID of the instance to update
-- `template_id` (optional): Template ID to apply
-- `template_hash_id` (optional): Template hash ID to apply
-- `image` (optional): New Docker image
-- `env` (optional): New environment variables
-- `onstart` (optional): New startup script
-- `args` (optional): New container arguments
-
-**Returns:**
-- Success/failure message
-
-### 16. logs(instance_id: int, tail: str = "1000", filter_text: str = "", daemon_logs: bool = False)
+### 15. logs(instance_id: int, tail: str = "1000", filter_text: str = "", daemon_logs: bool = False)
 Get logs for an instance.
 
 **Parameters:**
@@ -357,32 +314,28 @@ Get logs for an instance.
 **Returns:**
 - Instance logs text or status message
 
-### 17. attach_ssh(instance_id: int, ssh_key: str)
+### 16. attach_ssh(instance_id: int)
 Attach an SSH key to an instance for secure access.
 
 **Parameters:**
 - `instance_id`: ID of the instance to attach SSH key to
-- `ssh_key`: SSH public key string or path to public key file
 
 **Returns:**
 - Success/failure message
 
 **Examples:**
 ```python
-# Attach SSH key directly
-attach_ssh(12345, "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... user@hostname")
-
-# Attach SSH key from file
-attach_ssh(12345, "~/.ssh/id_rsa.pub")
+# Attach SSH key from configured public key file
+attach_ssh(12345)
 ```
 
 **Notes:**
+- Uses the SSH public key file configured in SSH_KEY_PUBLIC_FILE environment variable
 - Only public SSH keys are accepted (not private keys)
 - SSH key must start with 'ssh-' prefix (e.g., ssh-rsa, ssh-ed25519)
-- Can provide either the key content directly or a path to the public key file
 - After attaching, you can SSH to the instance using the corresponding private key
 
-### 18. search_templates()
+### 17. search_templates()
 Search for available templates on Vast.ai.
 
 **Parameters:**
@@ -405,10 +358,9 @@ search_templates()
 
 **Notes:**
 - Templates are pre-configured environments that simplify instance creation
-- You can use template IDs with update_instance() to apply template configurations
 - Templates may include specific Docker images, environment setups, and startup scripts
 
-### 19. execute_command(instance_id: int, command: str)
+### 18. execute_command(instance_id: int, command: str)
 Execute a (constrained) remote command only available on stopped instances. Use ssh to run commands on running instances.
 
 **Parameters:**
@@ -440,7 +392,7 @@ execute_command(12345, "du -d2 -h")
 - For running instances, use ssh_execute_command instead
 - Limited to specific safe commands for security
 
-### 20. ssh_execute_command(remote_host: str, remote_user: str, remote_port: int, command: str, private_key_file: str = None)
+### 19. ssh_execute_command(remote_host: str, remote_user: str, remote_port: int, command: str)
 Execute a command on a remote host via SSH.
 
 **Parameters:**
@@ -448,7 +400,6 @@ Execute a command on a remote host via SSH.
 - `remote_user`: The username to connect as (e.g., 'root', 'ubuntu', 'ec2-user')
 - `remote_port`: The SSH port number (typically 22 or custom port like 34608)
 - `command`: The command to execute on the remote host
-- `private_key_file` (optional): Path to the SSH private key file (defaults to ~/.ssh/id_rsa)
 
 **Returns:**
 - Command output with exit status, stdout, and stderr
@@ -460,17 +411,17 @@ ssh_execute_command(
     remote_host="116.43.148.85",
     remote_user="root", 
     remote_port=26378,
-    command="nvidia-smi",
-    private_key_file="~/.ssh/id_rsa"
+    command="nvidia-smi"
 )
 ```
 
 **Notes:**
 - Works with any SSH-accessible server, not just Vast.ai instances
+- Uses the SSH private key file configured in SSH_KEY_FILE environment variable
 - Automatically handles different SSH key types (RSA, Ed25519, ECDSA, DSS)
 - Returns detailed output including exit status and both stdout/stderr
 
-### 21. ssh_execute_background_command(remote_host: str, remote_user: str, remote_port: int, command: str, private_key_file: str = None, task_name: str = None)
+### 20. ssh_execute_background_command(remote_host: str, remote_user: str, remote_port: int, command: str, task_name: str = None)
 Execute a long-running command in the background on a remote host via SSH using nohup.
 
 **Parameters:**
@@ -478,7 +429,6 @@ Execute a long-running command in the background on a remote host via SSH using 
 - `remote_user`: The username to connect as (e.g., 'root', 'ubuntu', 'ec2-user')
 - `remote_port`: The SSH port number (typically 22 or custom port like 34608)
 - `command`: The command to execute in the background
-- `private_key_file` (optional): Path to the SSH private key file (defaults to ~/.ssh/id_rsa)
 - `task_name` (optional): Optional name for the task (for easier identification)
 
 **Returns:**
@@ -502,7 +452,7 @@ ssh_execute_background_command(
 - Use ssh_check_background_task to monitor progress
 - Use ssh_kill_background_task to stop if needed
 
-### 22. ssh_check_background_task(remote_host: str, remote_user: str, remote_port: int, task_id: str, process_id: int, private_key_file: str = None, tail_lines: int = 50)
+### 21. ssh_check_background_task(remote_host: str, remote_user: str, remote_port: int, task_id: str, process_id: int, tail_lines: int = 50)
 Check the status of a background SSH task and get its output.
 
 **Parameters:**
@@ -511,7 +461,6 @@ Check the status of a background SSH task and get its output.
 - `remote_port`: The SSH port number
 - `task_id`: The task ID returned by ssh_execute_background_command
 - `process_id`: The process ID returned by ssh_execute_background_command
-- `private_key_file` (optional): Path to the SSH private key file
 - `tail_lines` (optional): Number of recent log lines to show (default: 50)
 
 **Returns:**
@@ -535,7 +484,7 @@ ssh_check_background_task(
 - Displays recent log output from the task
 - Provides total log line count for progress indication
 
-### 23. ssh_kill_background_task(remote_host: str, remote_user: str, remote_port: int, task_id: str, process_id: int, private_key_file: str = None)
+### 22. ssh_kill_background_task(remote_host: str, remote_user: str, remote_port: int, task_id: str, process_id: int)
 Kill a running background SSH task.
 
 **Parameters:**
@@ -544,7 +493,6 @@ Kill a running background SSH task.
 - `remote_port`: The SSH port number
 - `task_id`: The task ID returned by ssh_execute_background_command
 - `process_id`: The process ID returned by ssh_execute_background_command
-- `private_key_file` (optional): Path to the SSH private key file
 
 **Returns:**
 - Status of the kill operation and cleanup results
@@ -565,6 +513,38 @@ ssh_kill_background_task(
 - Attempts graceful termination first, then force kill if necessary
 - Automatically cleans up temporary log and PID files
 - Safe to call even if the process has already completed
+
+### 23. configure_mcp_rules(auto_attach_ssh: bool = None, auto_label: bool = None, wait_for_ready: bool = None, label_prefix: str = None)
+Configure MCP automation rules that control automatic behaviors during instance creation.
+
+**Parameters:**
+- `auto_attach_ssh` (optional): Enable/disable automatic SSH key attachment for SSH/Jupyter instances
+- `auto_label` (optional): Enable/disable automatic instance labeling
+- `wait_for_ready` (optional): Enable/disable waiting for instance readiness after creation
+- `label_prefix` (optional): Set the prefix for automatic instance labels
+
+**Returns:**
+- Current configuration status and any changes made
+
+**Example:**
+```python
+# Configure MCP rules
+configure_mcp_rules(
+    auto_attach_ssh=True,
+    auto_label=True,
+    label_prefix="my-project",
+    wait_for_ready=True
+)
+
+# View current configuration
+configure_mcp_rules()
+```
+
+**Notes:**
+- These rules affect the behavior of create_instance and launch_instance_workflow
+- Auto-attach SSH applies only when SSH or Jupyter is enabled
+- Auto-labeling creates timestamps labels when no label is provided
+- Wait for ready monitors instance status until it becomes "running"
 
 ## Configuration
 
@@ -639,7 +619,7 @@ search_volumes("disk_space>=100", limit=5)
 ### 4. Advanced Instance Management
 ```python
 # Launch instance with specific GPU requirements (streamlined approach)
-launch_instance(
+launch_instance_workflow(
     gpu_name="RTX_4090",
     num_gpus=2,
     image="pytorch/pytorch:latest",
@@ -661,13 +641,6 @@ logs(instance_id=12345, tail="500", filter_text="error")
 
 # Reboot instance without losing GPU priority
 reboot_instance(instance_id=12345)
-
-# Update instance configuration
-update_instance(
-    instance_id=12345,
-    image="pytorch/pytorch:2.0",
-    env="-p 8888:8888 -e NEW_VAR=value"
-)
 ```
 
 ### 5. Instance Monitoring and Maintenance
@@ -697,7 +670,7 @@ create_instance(
 )
 
 # Attach your SSH key for access
-attach_ssh(instance_id=67890, ssh_key="~/.ssh/id_rsa.pub")
+attach_ssh(instance_id=67890)
 
 # Get instance details including SSH connection info
 show_instance(instance_id=67890)
@@ -706,27 +679,10 @@ show_instance(instance_id=67890)
 logs(instance_id=67890, tail="50")
 ```
 
-### 7. Template-Based Instance Creation
+### 7. Template Browsing
 ```python
 # Browse available templates
 search_templates()
-
-# Use a template for instance configuration
-update_instance(
-    instance_id=12345,
-    template_id=42  # Use template ID from search_templates()
-)
-
-# Or create instance then apply template
-create_instance(
-    offer_id=12345,
-    image="ubuntu:22.04",  # Will be overridden by template
-    ssh=True,
-    label="Template Test"
-)
-
-# Then apply template configuration
-update_instance(instance_id=new_instance_id, template_id=42)
 ```
 
 ### 8. Instance Command Execution
@@ -808,7 +764,7 @@ create_instance(
     disk=50.0,
     ssh=True,
     direct=True,
-    env="-p 8888:8888 -p 6006:6006",
+    env={},
     label="ML Training"
 )
 
