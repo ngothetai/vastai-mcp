@@ -608,8 +608,22 @@ def search_offers(ctx: Context, query: str = "", limit: int = 20, order: str = "
 @mcp.tool()
 def create_instance(ctx: Context, offer_id: int, image: str, disk: float = 10.0, 
                    ssh: bool = False, jupyter: bool = False, direct: bool = False,
-                   env: dict = None, label: str = "", bid_price: float = None) -> str:
-    """Create a new instance from an offer"""
+                   env: dict = None, label: str = "", bid_price: float = None, 
+                   template_id: int = None) -> str:
+    """Create a new instance from an offer
+    
+    Parameters:
+    - offer_id: ID of the offer to use for creating the instance
+    - image: Docker image to run on the instance
+    - disk: Amount of disk space in GB
+    - ssh: Enable SSH access
+    - jupyter: Enable Jupyter notebook
+    - direct: Enable direct access
+    - env: Environment variables dict
+    - label: Label for the instance
+    - bid_price: Maximum bid price per hour
+    - template_id: Optional template ID to use (from search_templates)
+    """
     try:
         client = get_vast_client()
 
@@ -637,6 +651,9 @@ def create_instance(ctx: Context, offer_id: int, image: str, disk: float = 10.0,
 
         if bid_price is not None:
             request_data["price"] = bid_price
+            
+        if template_id is not None:
+            request_data["template_id"] = template_id
 
         response = client._make_request(
             "PUT",
@@ -1047,7 +1064,7 @@ def attach_ssh(ctx: Context, instance_id: int) -> str:
 
 
 @mcp.tool()
-def search_templates(ctx: Context) -> str:
+def search_templates(ctx: Context, search_query: str = "") -> str:
     """Search for available templates on Vast.ai"""
     try:
         client = get_vast_client()
@@ -1055,7 +1072,7 @@ def search_templates(ctx: Context) -> str:
         response = client._make_request(
             "GET",
             "/template/",
-            json_data={}
+            query_params={"query": search_query, }
         )
 
         if response.get("success") is False:
