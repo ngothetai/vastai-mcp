@@ -804,30 +804,6 @@ def label_instance(ctx: Context, instance_id: int, label: str) -> str:
 
 
 @mcp.tool()
-def prepay_instance(ctx: Context, instance_id: int, amount: float) -> str:
-    """Deposit credits into reserved instance"""
-    try:
-        client = get_vast_client()
-
-        response = client._make_request(
-            "PUT",
-            f"/instances/prepay/{instance_id}/",
-            json_data={"amount": amount}
-        )
-
-        if response.get("success"):
-            timescale = response.get("timescale", 0)
-            discount_rate = response.get("discount_rate", 0) * 100
-            return f"Prepaid for {timescale:.3f} months of instance {instance_id} applying ${amount} credits for a discount of {discount_rate:.1f}%"
-        else:
-            return f"Failed to prepay instance {instance_id}: {response.get('msg', 'Unknown error')}"
-
-    except Exception as e:
-        logger.error(f"Error prepaying instance: {e}")
-        return f"Error prepaying instance {instance_id}: {str(e)}"
-
-
-@mcp.tool()
 def reboot_instance(ctx: Context, instance_id: int) -> str:
     """Reboot (stop/start) an instance without losing GPU priority"""
     try:
