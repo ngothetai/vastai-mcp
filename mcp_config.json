@@ -1,0 +1,14 @@
+{
+  "vast-ai": {
+    "command": "uv",
+    "args": [
+        "run",
+        "vast-mcp-server"
+    ],
+    "env": {
+        "VAST_API_KEY": "your_vast_api_key_here",
+        "SSH_KEY_FILE": "~/.ssh/id_rsa",
+        "SSH_KEY_PUBLIC_FILE": "~/.ssh/id_rsa.pub"
+    }
+  }
+} 

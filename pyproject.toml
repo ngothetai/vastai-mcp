@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vast-mcp-server"
+version = "0.1.0"
+description = "Model Context Protocol server for Vast.ai cloud GPU services"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "fastmcp>=0.1.0",
+    "pydantic>=2.0.0", 
+    "requests>=2.25.0",
+    "paramiko>=3.0.0"
+]
+
+[project.scripts]
+vast-mcp-server = "server:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/vast-mcp-server"
+Repository = "https://github.com/yourusername/vast-mcp-server"
+Issues = "https://github.com/yourusername/vast-mcp-server/issues"
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "server.py",
+    "mcp_config.json",
+    "vast-mcp-usage.md",
+] 
