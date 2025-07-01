@@ -439,6 +439,48 @@ def _prepare_instance(host: str, port: int, user_name: str) -> str:
     return f"🎉 Instance prepared successfully for user '{user_name}'!\n\n" + "\n".join(results)
 
 
+def filter_templates_by_name(api_response: Dict, search_name: str) -> List[Dict]:
+    """
+    Filter templates by name (at least one word match).
+    
+    Args:
+        api_response: The response from the vast.ai /template/ API
+        search_name: The name to search for (supports partial word matching)
+        
+    Returns:
+        List of templates that match at least one word in the name
+    """
+    if not api_response.get('success', False):
+        print(f"API response was not successful: {api_response}")
+        return []
+    
+    templates = api_response.get('templates', [])
+    if not templates:
+        print("No templates found in API response")
+        return []
+    
+    # Split search name into words and convert to lowercase for case-insensitive search
+    search_words = [word.lower().strip() for word in search_name.split() if word.strip()]
+    
+    if not search_words:
+        print("No valid search words provided")
+        return []
+    
+    # Filter templates by name word matching
+    matching_templates = []
+    for template in templates:
+        template_name = template.get('name', '').lower()
+        
+        # Check if any search word is found in the template name
+        name_matches = any(search_word in template_name for search_word in search_words)
+        
+        if name_matches:
+            matching_templates.append(template)
+    
+    print(f"Found {len(matching_templates)} templates with name containing words from '{search_name}' out of {len(templates)} total templates")
+    
+    return matching_templates
+
 # Create the MCP server
 mcp = FastMCP(
     "VastAI",
@@ -1064,7 +1106,7 @@ def attach_ssh(ctx: Context, instance_id: int) -> str:
 
 
 @mcp.tool()
-def search_templates(ctx: Context, search_query: str = "") -> str:
+def search_templates(ctx: Context, name_filter: str = None) -> str:
     """Search for available templates on Vast.ai"""
     try:
         client = get_vast_client()
@@ -1072,14 +1114,19 @@ def search_templates(ctx: Context, search_query: str = "") -> str:
         response = client._make_request(
             "GET",
             "/template/",
-            query_params={"query": search_query, }
+            query_params={"order_by": [{"col":"sort_order","dir":"asc"}], "select_filters": {"recommended":{"eq":True},"private":{"eq":False}}}
         )
 
         if response.get("success") is False:
             return f"Failed to search templates: {response.get('msg', response.get('error', 'Unknown error'))}"
+        
+        # Filter templates by name
+        if name_filter:
+            templates = filter_templates_by_name(response, name_filter)
+        else:
+            templates = response.get("templates", [])
 
-        templates = response.get("templates", [])
-        templates_found = response.get("templates_found", len(templates))
+        templates_found = len(templates)
         
         if not templates:
             return "No templates found."
