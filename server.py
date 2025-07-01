@@ -958,50 +958,6 @@ def search_templates(ctx: Context) -> str:
 
 
 @mcp.tool()
-def launch_instance_workflow(ctx: Context, gpu_name: str, num_gpus: int, image: str, 
-                           disk: float = 16.0, ssh: bool = True, jupyter: bool = False, 
-                           direct: bool = True, label: str = "", region: str = "") -> str:
-    """Launch the top instance from search offers based on given parameters"""
-    try:
-        # Step 1: Search for offers
-        search_query = f"gpu_name={gpu_name} num_gpus={num_gpus}"
-        if region:
-            search_query += f" geolocation={region}"
-        
-        offers_result = search_offers(ctx, search_query, limit=1, order="score-")
-        
-        if "No offers found" in offers_result:
-            return f"❌ No suitable offers found for {gpu_name} x{num_gpus}"
-        
-        # Extract offer ID from the first result (simplified parsing)
-        lines = offers_result.split('\n')
-        offer_id = None
-        for line in lines:
-            if line.startswith("ID: "):
-                offer_id = int(line.split(": ")[1])
-                break
-        
-        if not offer_id:
-            return "❌ Could not parse offer ID from search results"
-        
-        # Step 2: Create instance with the best offer
-        result = f"🚀 Launching Instance Workflow\n\n"
-        result += f"Selected Offer ID: {offer_id}\n"
-        result += f"GPU: {gpu_name} x{num_gpus}\n"
-        result += f"Image: {image}\n"
-        result += f"Disk: {disk} GB\n\n"
-        
-        create_result = create_instance(ctx, offer_id, image, disk, ssh, jupyter, direct, None, label)
-        result += create_result
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error in launch workflow: {e}")
-        return f"❌ Launch workflow failed: {str(e)}"
-
-
-@mcp.tool()
 def configure_mcp_rules(ctx: Context, auto_attach_ssh: bool = None, auto_label: bool = None, 
                        wait_for_ready: bool = None, label_prefix: str = None) -> str:
     """Configure MCP automation rules"""
