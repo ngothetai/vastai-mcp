@@ -23,6 +23,7 @@ DEFAULT_SERVER_URL = "https://console.vast.ai"
 VAST_API_KEY = os.getenv("VAST_API_KEY")
 SSH_KEY_FILE = os.path.expanduser(os.getenv("SSH_KEY_FILE", "~/.ssh/id_rsa"))
 SSH_KEY_PUBLIC_FILE = os.path.expanduser(os.getenv("SSH_KEY_PUBLIC_FILE", "~/.ssh/id_rsa.pub"))
+USER_NAME = os.getenv("USER_NAME", "user01")
 
 assert VAST_API_KEY, "VAST_API_KEY is not set"
 assert os.path.exists(SSH_KEY_FILE), "SSH_KEY_FILE does not exist"
@@ -44,6 +45,9 @@ class MCPRules:
         self.wait_for_instance_ready = os.getenv("MCP_WAIT_FOR_READY", "true").lower() == "true"
         self.ready_timeout_seconds = int(os.getenv("MCP_READY_TIMEOUT", "300"))  # 5 minutes
 
+        # # Prepare instance
+        # self.prepare_instance = os.getenv("MCP_PREPARE_INSTANCE", "true").lower() == "true"
+
 # Global rules configuration
 mcp_rules = MCPRules()
 
@@ -58,8 +62,7 @@ def apply_post_creation_rules(ctx: Context, instance_id: int, ssh: bool, jupyter
             ssh_result = attach_ssh(ctx, instance_id)
             rule_results.append(f"🔑 Auto SSH Key Attachment:\n{ssh_result}")
         except Exception as ssh_error:
-            rule_results.append(f"⚠️  SSH key attachment failed: {str(ssh_error)}")
-            rule_results.append("You can manually attach SSH key later using 'attach_ssh' function.")
+            return f"⚠️  SSH key attachment failed: {str(ssh_error)}, try again or recreate instance"
     
     # Rule 2: Auto-label instance if no label provided
     if mcp_rules.auto_label_instances and not original_label:
@@ -70,20 +73,40 @@ def apply_post_creation_rules(ctx: Context, instance_id: int, ssh: bool, jupyter
             rule_results.append(f"🏷️  Auto-labeling: {label_result}")
         except Exception as label_error:
             rule_results.append(f"⚠️  Auto-labeling failed: {str(label_error)}")
-    
+            
     # Rule 3: Wait for instance readiness (if enabled)
     if mcp_rules.wait_for_instance_ready:
         try:
             ready_result = wait_for_instance_ready(ctx, instance_id, mcp_rules.ready_timeout_seconds)
             rule_results.append(f"⏰ Instance Readiness Check:\n{ready_result}")
         except Exception as ready_error:
-            rule_results.append(f"⚠️  Readiness check failed: {str(ready_error)}")
-    
+            return f"⚠️ Readiness check failed: {str(ready_error)}"
+            
+    # if mcp_rules.prepare_instance:
+    #     # Rule 5: Prepare instance, create user, disable sudo password and install packages
+    #     try:
+    #         host, port = get_instance_ssh_info(ctx, instance_id)
+    #         prepare_instance(ctx, host, port, USER_NAME)
+    #         rule_results.append(f"🔒 Prepared instance: ssh -i {SSH_KEY_FILE} -p {port} {USER_NAME}@{host}")
+    #     except Exception as instance_error:
+    #         return f"⚠️ Failed to prepare instance: {str(instance_error)}"
+
     # Format results
     if rule_results:
         return "\n📋 MCP Rules Applied:\n" + "\n".join(f"  {result}" for result in rule_results) + "\n"
     else:
         return "\n📋 No MCP rules applied (all disabled or not applicable)\n"
+
+def get_instance_ssh_info(ctx: Context, instance_id: int) -> tuple[str, int]:
+    """Get instance ssh connection info"""
+    client = get_vast_client()
+    response = client._make_request(
+        "GET",
+        f"/instances/{instance_id}/",
+        query_params={"owner": "me"}
+    )
+    instance = response.get("instances", {})
+    return instance.get("ssh_host"), instance.get("ssh_port")
 
 
 def wait_for_instance_ready(ctx: Context, instance_id: int, timeout_seconds: int = 300) -> str:
@@ -116,7 +139,7 @@ def wait_for_instance_ready(ctx: Context, instance_id: int, timeout_seconds: int
             logger.warning(f"Error checking instance readiness: {e}")
             time.sleep(5)
     
-    return f"⏰ Timeout waiting for instance {instance_id} to become ready (waited {timeout_seconds} seconds)"
+    return f"⏰ Timeout error. Now destroy instance {instance_id} and recreate similar instance again."
 
 
 class VastAIClient:
@@ -1486,6 +1509,27 @@ fi
         if client:
             client.close()
 
+
+@mcp.tool()
+def prepare_instance(ctx: Context, host: str, port: int, user: str) -> str:
+    """
+    Prepare instance, create user, disable sudo password and install packages
+    Args:
+        ctx: Context
+        host: str
+        port: int
+        user: str - user to create
+    """
+    ssh_execute_command(ctx, host, port, "root", "apt update && apt upgrade -y")
+    ssh_execute_command(ctx, host, port, "root", f"useradd -m --shell /bin/bash {user}")
+    ssh_execute_command(ctx, host, port, "root", f"usermod -aG sudo {user}")
+    ssh_execute_command(ctx, host, port, "root", f"mkdir -p /home/{user}/.ssh")
+    ssh_execute_command(ctx, host, port, "root", f"mkdir -p /home/{user}/.bash_profile")
+    ssh_execute_command(ctx, host, port, "root", f"cp ~/.ssh/authorized_keys /home/{user}/.ssh/authorized_keys")
+    ssh_execute_command(ctx, host, port, "root", f"chown -R {user}:{user} /home/{user}/.ssh")
+    ssh_execute_command(ctx, host, port, "root", f"bash -c 'echo \"%sudo ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/90-nopasswd-sudo'")
+    ssh_execute_command(ctx, host, port, "root", f"chmod 0440 /etc/sudoers.d/90-nopasswd-sudo")
+    return f"Instance prepared for {user}"
 
 def main():
     """Run the MCP server"""

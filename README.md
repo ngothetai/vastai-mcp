@@ -514,7 +514,46 @@ ssh_kill_background_task(
 - Automatically cleans up temporary log and PID files
 - Safe to call even if the process has already completed
 
-### 23. configure_mcp_rules(auto_attach_ssh: bool = None, auto_label: bool = None, wait_for_ready: bool = None, label_prefix: str = None)
+### 23. disable_sudo_password(remote_host: str, remote_user: str, remote_port: int)
+Disable sudo password requirement for the sudo group on a remote host via SSH.
+
+This function safely modifies the sudoers file to allow passwordless sudo access for users in the sudo group.
+
+**Parameters:**
+- `remote_host`: The hostname or IP address of the remote server
+- `remote_user`: The username to connect as (e.g., 'root', 'ubuntu', 'ec2-user')
+- `remote_port`: The SSH port number (typically 22 or custom port like 34608)
+
+**Returns:**
+- Detailed status of the sudoers modification including:
+  - Previous and new sudo configuration
+  - Validation results
+  - Backup file location
+
+**Example:**
+```python
+# Disable sudo password on a running instance
+disable_sudo_password(
+    remote_host="ssh1.vast.ai",
+    remote_user="root", 
+    remote_port=26378
+)
+```
+
+**Safety Features:**
+- Creates automatic backup of sudoers file before modification
+- Validates sudoers syntax with `visudo -c` after changes
+- Automatically restores backup if validation fails
+- Shows before/after configuration for verification
+
+**Notes:**
+- Modifies sudoers to: `%sudo  ALL=(ALL) NOPASSWD: ALL`
+- Requires the connecting user to have sudo privileges
+- Backup files are timestamped for safety
+- Works with any SSH-accessible Linux system
+- Test the change with `sudo -l` after execution
+
+### 24. configure_mcp_rules(auto_attach_ssh: bool = None, auto_label: bool = None, wait_for_ready: bool = None, label_prefix: str = None)
 Configure MCP automation rules that control automatic behaviors during instance creation.
 
 **Parameters:**
