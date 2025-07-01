@@ -21,8 +21,8 @@ logger = logging.getLogger("VastMCPServer")
 DEFAULT_SERVER_URL = "https://console.vast.ai"
 
 VAST_API_KEY = os.getenv("VAST_API_KEY")
-SSH_KEY_FILE = os.path.expanduser(os.getenv("SSH_KEY_FILE", "~/.ssh/id_rsa"))
-SSH_KEY_PUBLIC_FILE = os.path.expanduser(os.getenv("SSH_KEY_PUBLIC_FILE", "~/.ssh/id_rsa.pub"))
+SSH_KEY_FILE = os.path.expanduser(os.getenv("SSH_KEY_FILE"))
+SSH_KEY_PUBLIC_FILE = os.path.expanduser(os.getenv("SSH_KEY_PUBLIC_FILE"))
 USER_NAME = os.getenv("USER_NAME", "user01")
 
 assert VAST_API_KEY, "VAST_API_KEY is not set"
@@ -45,8 +45,8 @@ class MCPRules:
         self.wait_for_instance_ready = os.getenv("MCP_WAIT_FOR_READY", "true").lower() == "true"
         self.ready_timeout_seconds = int(os.getenv("MCP_READY_TIMEOUT", "300"))  # 5 minutes
 
-        # # Prepare instance
-        # self.prepare_instance = os.getenv("MCP_PREPARE_INSTANCE", "true").lower() == "true"
+        # Prepare instance
+        self.prepare_instance = os.getenv("MCP_PREPARE_INSTANCE", "false").lower() == "true"
 
 # Global rules configuration
 mcp_rules = MCPRules()
@@ -82,14 +82,14 @@ def apply_post_creation_rules(ctx: Context, instance_id: int, ssh: bool, jupyter
         except Exception as ready_error:
             return f"⚠️ Readiness check failed: {str(ready_error)}"
             
-    # if mcp_rules.prepare_instance:
-    #     # Rule 5: Prepare instance, create user, disable sudo password and install packages
-    #     try:
-    #         host, port = get_instance_ssh_info(ctx, instance_id)
-    #         prepare_instance(ctx, host, port, USER_NAME)
-    #         rule_results.append(f"🔒 Prepared instance: ssh -i {SSH_KEY_FILE} -p {port} {USER_NAME}@{host}")
-    #     except Exception as instance_error:
-    #         return f"⚠️ Failed to prepare instance: {str(instance_error)}"
+    if mcp_rules.prepare_instance:
+        # Rule 5: Prepare instance, create user, disable sudo password and install packages
+        try:
+            host, port = get_instance_ssh_info(ctx, instance_id)
+            prepare_instance(host, port, USER_NAME)
+            rule_results.append(f"🔒 Prepared instance: ssh -i {SSH_KEY_FILE} -p {port} {USER_NAME}@{host}")
+        except Exception as instance_error:
+            return f"⚠️ Failed to prepare instance: {str(instance_error)}"
 
     # Format results
     if rule_results:
@@ -294,6 +294,160 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
         yield {}
     finally:
         logger.info("VastAI MCP server shut down")
+
+
+# Add this helper function before the @mcp.tool() functions
+def _execute_ssh_command(remote_host: str, remote_user: str, remote_port: int, command: str) -> dict:
+    """
+    Helper function to execute SSH commands that can be called by other functions.
+    Returns a dict with 'success', 'stdout', 'stderr', 'exit_status', and 'error' keys.
+    """
+    client = paramiko.SSHClient()
+    
+    try:
+        # Load system host keys for security
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        logger.info(f"Connecting to {remote_host}:{remote_port} as {remote_user}")
+
+        # Check if private key file exists
+        if not os.path.exists(SSH_KEY_FILE):
+            return {
+                'success': False,
+                'error': f"Private key file not found at: {SSH_KEY_FILE}",
+                'stdout': '',
+                'stderr': '',
+                'exit_status': -1
+            }
+
+        # Load the private key
+        try:
+            private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_FILE)
+        except paramiko.ssh_exception.PasswordRequiredException:
+            return {
+                'success': False,
+                'error': f"Private key at {SSH_KEY_FILE} is encrypted with a passphrase",
+                'stdout': '',
+                'stderr': '',
+                'exit_status': -1
+            }
+        except Exception as key_error:
+            # Try other key types
+            try:
+                private_key = paramiko.Ed25519Key.from_private_key_file(SSH_KEY_FILE)
+            except:
+                try:
+                    private_key = paramiko.ECDSAKey.from_private_key_file(SSH_KEY_FILE)
+                except:
+                    try:
+                        private_key = paramiko.DSSKey.from_private_key_file(SSH_KEY_FILE)
+                    except:
+                        return {
+                            'success': False,
+                            'error': f"Could not load private key from {SSH_KEY_FILE}: {str(key_error)}",
+                            'stdout': '',
+                            'stderr': '',
+                            'exit_status': -1
+                        }
+        
+        # Connect to the server
+        client.connect(
+            hostname=remote_host,
+            port=remote_port,
+            username=remote_user,
+            pkey=private_key,
+            timeout=30
+        )
+        
+        logger.info("SSH connection successful")
+        
+        # Execute the command
+        logger.info(f"Executing command: '{command}'")
+        stdin, stdout, stderr = client.exec_command(command)
+        
+        # Read the output
+        stdout_output = stdout.read().decode('utf-8').strip()
+        stderr_output = stderr.read().decode('utf-8').strip()
+        exit_status = stdout.channel.recv_exit_status()
+        
+        return {
+            'success': exit_status == 0,
+            'stdout': stdout_output,
+            'stderr': stderr_output,
+            'exit_status': exit_status,
+            'error': None
+        }
+        
+    except FileNotFoundError:
+        return {
+            'success': False,
+            'error': f"Private key file not found at: {SSH_KEY_FILE}",
+            'stdout': '',
+            'stderr': '',
+            'exit_status': -1
+        }
+    except paramiko.AuthenticationException:
+        return {
+            'success': False,
+            'error': f"Authentication failed for {remote_user}@{remote_host}:{remote_port}",
+            'stdout': '',
+            'stderr': '',
+            'exit_status': -1
+        }
+    except paramiko.SSHException as e:
+        return {
+            'success': False,
+            'error': f"SSH error occurred: {str(e)}",
+            'stdout': '',
+            'stderr': '',
+            'exit_status': -1
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f"Unexpected error occurred: {str(e)}",
+            'stdout': '',
+            'stderr': '',
+            'exit_status': -1
+        }
+    
+    finally:
+        # Always close the connection
+        if client:
+            client.close()
+        logger.info("SSH connection closed")
+
+
+def prepare_instance(host: str, port: int, user_name: str) -> str:
+    """
+    Prepare instance, create user, disable sudo password and install packages
+    Args:
+        ctx: Context
+        host: str
+        port: int
+        user: str - user to create
+    """
+    commands = [
+        "apt update && apt upgrade -y",
+        f"useradd -m --shell /bin/bash {user_name}",
+        f"usermod -aG sudo {user_name}",
+        f"mkdir -p /home/{user_name}/.ssh",
+        f"mkdir -p /home/{user_name}/.bash_profile",
+        f"cp ~/.ssh/authorized_keys /home/{user_name}/.ssh/authorized_keys",
+        f"chown -R {user_name}:{user_name} /home/{user_name}/.ssh",
+        f"bash -c 'echo \"%sudo ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/90-nopasswd-sudo'",
+        f"chmod 0440 /etc/sudoers.d/90-nopasswd-sudo"
+    ]
+    
+    results = []
+    for cmd in commands:
+        result = _execute_ssh_command(host, "root", port, cmd)
+        if not result['success']:
+            raise Exception(f"❌ Failed to prepare instance at step: {cmd}\nError: {result['error']}\nSTDOUT: {result['stdout']}\nSTDERR: {result['stderr']}")
+        results.append(f"✅ {cmd}: {result['stdout']}")
+    
+    return f"🎉 Instance prepared successfully for user '{user_name}'!\n\n" + "\n".join(results)
 
 
 # Create the MCP server
@@ -1088,94 +1242,32 @@ def ssh_execute_command(ctx: Context, remote_host: str, remote_user: str, remote
     - command: The command to execute on the remote host
     - private_key_file: Path to the SSH private key file (optional, defaults to ~/.ssh/id_rsa)
     """
-
-    client = paramiko.SSHClient()
     
-    try:
-        # Load system host keys for security
-        client.load_system_host_keys()
-        
-        # Automatically add host keys (for convenience in cloud environments)
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
-        logger.info(f"Connecting to {remote_host}:{remote_port} as {remote_user}")
-
-        # Check if private key file exists
-        if not os.path.exists(SSH_KEY_FILE):
-            return f"Error: Private key file not found at: {SSH_KEY_FILE}\nPlease ensure the key exists and the path is correct."
-
-        # Load the private key
-        try:
-            private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_FILE)
-        except paramiko.ssh_exception.PasswordRequiredException:
-            return f"Error: Private key at {SSH_KEY_FILE} is encrypted with a passphrase. Please use an unencrypted key or implement passphrase handling."
-        except Exception as key_error:
-            # Try other key types
-            try:
-                private_key = paramiko.Ed25519Key.from_private_key_file(SSH_KEY_FILE)
-            except:
-                try:
-                    private_key = paramiko.ECDSAKey.from_private_key_file(SSH_KEY_FILE)
-                except:
-                    try:
-                        private_key = paramiko.DSSKey.from_private_key_file(SSH_KEY_FILE)
-                    except:
-                        return f"Error: Could not load private key from {SSH_KEY_FILE}: {str(key_error)}"
-        
-        # Connect to the server
-        client.connect(
-            hostname=remote_host,
-            port=remote_port,
-            username=remote_user,
-            pkey=private_key,
-            timeout=30
-        )
-        
-        logger.info("SSH connection successful")
-        
-        # Execute the command
-        logger.info(f"Executing command: '{command}'")
-        stdin, stdout, stderr = client.exec_command(command)
-        
-        # Read the output
-        stdout_output = stdout.read().decode('utf-8').strip()
-        stderr_output = stderr.read().decode('utf-8').strip()
-        exit_status = stdout.channel.recv_exit_status()
-        
-        # Build result
-        result = f"SSH Command Execution on {remote_host}:{remote_port}\n"
-        result += f"Command: {command}\n"
-        result += f"Exit Status: {exit_status}\n\n"
-        
-        if stdout_output:
-            result += "--- STDOUT ---\n"
-            result += stdout_output + "\n\n"
-        
-        if stderr_output:
-            result += "--- STDERR ---\n"
-            result += stderr_output + "\n\n"
-        
-        if exit_status == 0:
-            result += "✅ Command executed successfully"
+    # Use the helper function
+    result_data = _execute_ssh_command(remote_host, remote_user, remote_port, command)
+    
+    # Format result for display
+    result = f"SSH Command Execution on {remote_host}:{remote_port}\n"
+    result += f"Command: {command}\n"
+    result += f"Exit Status: {result_data['exit_status']}\n\n"
+    
+    if result_data['stdout']:
+        result += "--- STDOUT ---\n"
+        result += result_data['stdout'] + "\n\n"
+    
+    if result_data['stderr']:
+        result += "--- STDERR ---\n"
+        result += result_data['stderr'] + "\n\n"
+    
+    if result_data['success']:
+        result += "✅ Command executed successfully"
+    else:
+        if result_data['error']:
+            result += f"❌ Command failed: {result_data['error']}"
         else:
             result += "❌ Command failed"
-        
-        return result
-        
-    except FileNotFoundError:
-        return f"Error: Private key file not found at: {SSH_KEY_FILE}\nPlease ensure the key exists and the path is correct."
-    except paramiko.AuthenticationException:
-        return f"Error: Authentication failed for {remote_user}@{remote_host}:{remote_port}\nPlease check the username and ensure your public key is in the remote server's authorized_keys file."
-    except paramiko.SSHException as e:
-        return f"Error: SSH error occurred: {str(e)}\nThis might be due to host key verification issues or network problems."
-    except Exception as e:
-        return f"Error: Unexpected error occurred: {str(e)}"
     
-    finally:
-        # Always close the connection
-        if client:
-            client.close()
-        logger.info("SSH connection closed")
+    return result
 
 
 @mcp.tool()
@@ -1509,27 +1601,6 @@ fi
         if client:
             client.close()
 
-
-@mcp.tool()
-def prepare_instance(ctx: Context, host: str, port: int, user: str) -> str:
-    """
-    Prepare instance, create user, disable sudo password and install packages
-    Args:
-        ctx: Context
-        host: str
-        port: int
-        user: str - user to create
-    """
-    ssh_execute_command(ctx, host, port, "root", "apt update && apt upgrade -y")
-    ssh_execute_command(ctx, host, port, "root", f"useradd -m --shell /bin/bash {user}")
-    ssh_execute_command(ctx, host, port, "root", f"usermod -aG sudo {user}")
-    ssh_execute_command(ctx, host, port, "root", f"mkdir -p /home/{user}/.ssh")
-    ssh_execute_command(ctx, host, port, "root", f"mkdir -p /home/{user}/.bash_profile")
-    ssh_execute_command(ctx, host, port, "root", f"cp ~/.ssh/authorized_keys /home/{user}/.ssh/authorized_keys")
-    ssh_execute_command(ctx, host, port, "root", f"chown -R {user}:{user} /home/{user}/.ssh")
-    ssh_execute_command(ctx, host, port, "root", f"bash -c 'echo \"%sudo ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/90-nopasswd-sudo'")
-    ssh_execute_command(ctx, host, port, "root", f"chmod 0440 /etc/sudoers.d/90-nopasswd-sudo")
-    return f"Instance prepared for {user}"
 
 def main():
     """Run the MCP server"""
