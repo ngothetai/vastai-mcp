@@ -423,10 +423,9 @@ def prepare_instance(host: str, port: int, user_name: str) -> str:
     """
     Prepare instance, create user, disable sudo password and install packages
     Args:
-        ctx: Context
         host: str
         port: int
-        user: str - user to create
+        user_name: str - user to create
     """
     commands = [
         "apt update && apt upgrade -y",
@@ -439,14 +438,14 @@ def prepare_instance(host: str, port: int, user_name: str) -> str:
         f"bash -c 'echo \"%sudo ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/90-nopasswd-sudo'",
         f"chmod 0440 /etc/sudoers.d/90-nopasswd-sudo"
     ]
-    
+
     results = []
     for cmd in commands:
         result = _execute_ssh_command(host, "root", port, cmd)
         if not result['success']:
             raise Exception(f"❌ Failed to prepare instance at step: {cmd}\nError: {result['error']}\nSTDOUT: {result['stdout']}\nSTDERR: {result['stderr']}")
         results.append(f"✅ {cmd}: {result['stdout']}")
-    
+
     return f"🎉 Instance prepared successfully for user '{user_name}'!\n\n" + "\n".join(results)
 
 
