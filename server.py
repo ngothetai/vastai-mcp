@@ -433,6 +433,8 @@ def _prepare_instance(host: str, port: int, user_name: str) -> str:
         if not result['success']:
             raise Exception(f"❌ Failed to prepare instance at step: {cmd}\nError: {result['error']}\nSTDOUT: {result['stdout']}\nSTDERR: {result['stderr']}")
         results.append(f"✅ {cmd}: {result['stdout']}")
+    
+    results.append(f"🔒 Now you can connect: ssh -i {SSH_KEY_FILE} -p {port} {user_name}@{host}")
 
     return f"🎉 Instance prepared successfully for user '{user_name}'!\n\n" + "\n".join(results)
 
@@ -1590,13 +1592,13 @@ fi
 
 
 @mcp.tool()
-def prepare_instance(ctx: Context, instance_id: int, user_name: str) -> str:
+def prepare_instance(ctx: Context, instance_id: int) -> str:
     """
     Prepare instance, create user, disable sudo password and install packages
     """
     try:
         host, port = get_instance_ssh_info(ctx, instance_id)
-        return _prepare_instance(host, port, user_name)
+        return _prepare_instance(host, port, USER_NAME)
     except Exception as e:
         return f"❌ Failed to prepare instance: {str(e)}"
 
