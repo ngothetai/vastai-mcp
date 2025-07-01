@@ -45,9 +45,6 @@ class MCPRules:
         self.wait_for_instance_ready = os.getenv("MCP_WAIT_FOR_READY", "true").lower() == "true"
         self.ready_timeout_seconds = int(os.getenv("MCP_READY_TIMEOUT", "300"))  # 5 minutes
 
-        # Prepare instance
-        self.prepare_instance = os.getenv("MCP_PREPARE_INSTANCE", "false").lower() == "true"
-
 # Global rules configuration
 mcp_rules = MCPRules()
 
@@ -82,15 +79,6 @@ def apply_post_creation_rules(ctx: Context, instance_id: int, ssh: bool, jupyter
         except Exception as ready_error:
             return f"⚠️ Readiness check failed: {str(ready_error)}"
             
-    if mcp_rules.prepare_instance:
-        # Rule 5: Prepare instance, create user, disable sudo password and install packages
-        try:
-            host, port = get_instance_ssh_info(ctx, instance_id)
-            prepare_instance(host, port, USER_NAME)
-            rule_results.append(f"🔒 Prepared instance: ssh -i {SSH_KEY_FILE} -p {port} {USER_NAME}@{host}")
-        except Exception as instance_error:
-            return f"⚠️ Failed to prepare instance: {str(instance_error)}"
-
     # Format results
     if rule_results:
         return "\n📋 MCP Rules Applied:\n" + "\n".join(f"  {result}" for result in rule_results) + "\n"
@@ -419,7 +407,7 @@ def _execute_ssh_command(remote_host: str, remote_user: str, remote_port: int, c
         logger.info("SSH connection closed")
 
 
-def prepare_instance(host: str, port: int, user_name: str) -> str:
+def _prepare_instance(host: str, port: int, user_name: str) -> str:
     """
     Prepare instance, create user, disable sudo password and install packages
     Args:
@@ -1600,6 +1588,17 @@ fi
         if client:
             client.close()
 
+
+@mcp.tool()
+def prepare_instance(ctx: Context, instance_id: int, user_name: str) -> str:
+    """
+    Prepare instance, create user, disable sudo password and install packages
+    """
+    try:
+        host, port = get_instance_ssh_info(ctx, instance_id)
+        return _prepare_instance(host, port, user_name)
+    except Exception as e:
+        return f"❌ Failed to prepare instance: {str(e)}"
 
 def main():
     """Run the MCP server"""
