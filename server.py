@@ -439,7 +439,7 @@ def _prepare_instance(host: str, port: int, user_name: str) -> str:
     return f"🎉 Instance prepared successfully for user '{user_name}'!\n\n" + "\n".join(results)
 
 
-def filter_templates_by_name(api_response: Dict, search_name: str) -> List[Dict]:
+def filter_templates_by_name(templates: list[dict], search_name: str) -> List[Dict]:
     """
     Filter templates by name (at least one word match).
     
@@ -450,11 +450,6 @@ def filter_templates_by_name(api_response: Dict, search_name: str) -> List[Dict]
     Returns:
         List of templates that match at least one word in the name
     """
-    if not api_response.get('success', False):
-        print(f"API response was not successful: {api_response}")
-        return []
-    
-    templates = api_response.get('templates', [])
     if not templates:
         print("No templates found in API response")
         return []
@@ -1108,6 +1103,9 @@ def attach_ssh(ctx: Context, instance_id: int) -> str:
 @mcp.tool()
 def search_templates(ctx: Context, name_filter: str = None) -> str:
     """Search for available templates on Vast.ai"""
+    """
+    name_filter: str = None # Filter templates by simple name, no digits
+    """
     try:
         client = get_vast_client()
 
@@ -1120,11 +1118,11 @@ def search_templates(ctx: Context, name_filter: str = None) -> str:
         if response.get("success") is False:
             return f"Failed to search templates: {response.get('msg', response.get('error', 'Unknown error'))}"
         
+        templates = response.get("templates", [])
+
         # Filter templates by name
         if name_filter:
-            templates = filter_templates_by_name(response, name_filter)
-        else:
-            templates = response.get("templates", [])
+            templates = filter_templates_by_name(templates, name_filter)
 
         templates_found = len(templates)
         
