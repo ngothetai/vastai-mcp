@@ -164,6 +164,7 @@ cython_debug/
 *.crt
 *.csr
 *.pem
+*.pub
 
 .idea
 .DS_Store
