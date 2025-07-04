@@ -21,13 +21,18 @@ logger = logging.getLogger("VastMCPServer")
 DEFAULT_SERVER_URL = "https://console.vast.ai"
 
 VAST_API_KEY = os.getenv("VAST_API_KEY")
-SSH_KEY_FILE = os.path.expanduser(os.getenv("SSH_KEY_FILE"))
-SSH_KEY_PUBLIC_FILE = os.path.expanduser(os.getenv("SSH_KEY_PUBLIC_FILE"))
+SSH_KEY_FILE = os.path.expanduser(os.getenv("SSH_KEY_FILE", "")) if os.getenv("SSH_KEY_FILE") else ""
+SSH_KEY_PUBLIC_FILE = os.path.expanduser(os.getenv("SSH_KEY_PUBLIC_FILE", "")) if os.getenv("SSH_KEY_PUBLIC_FILE") else ""
 USER_NAME = os.getenv("USER_NAME", "user01")
 
-assert VAST_API_KEY, "VAST_API_KEY is not set"
-assert os.path.exists(SSH_KEY_FILE), "SSH_KEY_FILE does not exist"
-assert os.path.exists(SSH_KEY_PUBLIC_FILE), "SSH_KEY_PUBLIC_FILE does not exist"
+# Validate configuration on server start, not import
+def validate_configuration():
+    if not VAST_API_KEY:
+        raise Exception("VAST_API_KEY is not set")
+    if not SSH_KEY_FILE or not os.path.exists(SSH_KEY_FILE):
+        raise Exception(f"SSH_KEY_FILE does not exist: {SSH_KEY_FILE}")
+    if not SSH_KEY_PUBLIC_FILE or not os.path.exists(SSH_KEY_PUBLIC_FILE):
+        raise Exception(f"SSH_KEY_PUBLIC_FILE does not exist: {SSH_KEY_PUBLIC_FILE}")
 
 # MCP Rules Configuration
 class MCPRules:
@@ -1642,17 +1647,27 @@ def prepare_instance(ctx: Context, instance_id: int) -> str:
 
 def main():
     """Run the MCP server"""
-    import argparse
+    try:
+        # Validate configuration before starting
+        validate_configuration()
+        
+        import argparse
 
-    parser = argparse.ArgumentParser(description="Vast.ai MCP Server")
-    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
-    parser.add_argument("--host", type=str, default="localhost", help="Host to run the server on")
+        parser = argparse.ArgumentParser(description="Vast.ai MCP Server")
+        parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
+        parser.add_argument("--host", type=str, default="localhost", help="Host to run the server on")
 
-    args = parser.parse_args()
+        args = parser.parse_args()
 
-    logger.info(f"Starting Vast.ai MCP server on {args.host}:{args.port}")
-    # mcp.run(host=args.host, port=args.port)
-    mcp.run()
+        logger.info(f"Starting Vast.ai MCP server on {args.host}:{args.port}")
+        logger.info(f"Using SSH key: {SSH_KEY_FILE}")
+        logger.info(f"Using SSH public key: {SSH_KEY_PUBLIC_FILE}")
+        
+        # Use the FastMCP object that was created earlier
+        mcp.run()
+    except Exception as e:
+        logger.error(f"Failed to start MCP server: {str(e)}")
+        raise
 
 
 if __name__ == "__main__":
