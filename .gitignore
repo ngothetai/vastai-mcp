@@ -171,4 +171,4 @@ cython_debug/
 
 src/logs
 
-uv.lock
+*.lock
