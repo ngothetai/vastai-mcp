@@ -22,8 +22,10 @@ DEFAULT_SERVER_URL = "https://console.vast.ai"
 
 VAST_API_KEY = os.getenv("VAST_API_KEY")
 SSH_KEY_FILE = os.path.expanduser(os.getenv("SSH_KEY_FILE", "")) if os.getenv("SSH_KEY_FILE") else ""
-SSH_KEY_PUBLIC_FILE = os.path.expanduser(os.getenv("SSH_KEY_PUBLIC_FILE", "")) if os.getenv("SSH_KEY_PUBLIC_FILE") else ""
+SSH_KEY_PUBLIC_FILE = os.path.expanduser(os.getenv("SSH_KEY_PUBLIC_FILE", "")) if os.getenv(
+    "SSH_KEY_PUBLIC_FILE") else ""
 USER_NAME = os.getenv("USER_NAME", "user01")
+
 
 # Validate configuration on server start, not import
 def validate_configuration():
@@ -34,21 +36,23 @@ def validate_configuration():
     if not SSH_KEY_PUBLIC_FILE or not os.path.exists(SSH_KEY_PUBLIC_FILE):
         raise Exception(f"SSH_KEY_PUBLIC_FILE does not exist: {SSH_KEY_PUBLIC_FILE}")
 
+
 # MCP Rules Configuration
 class MCPRules:
     """Configuration for MCP automation rules"""
-    
+
     def __init__(self):
         # Auto-attach SSH key when creating SSH/Jupyter instances
         self.auto_attach_ssh_on_create = os.getenv("MCP_AUTO_ATTACH_SSH", "true").lower() == "true"
-        
+
         # Default instance labeling
         self.auto_label_instances = os.getenv("MCP_AUTO_LABEL", "true").lower() == "true"
         self.default_label_prefix = os.getenv("MCP_LABEL_PREFIX", "mcp-instance")
-        
+
         # Wait for instance readiness
         self.wait_for_instance_ready = os.getenv("MCP_WAIT_FOR_READY", "true").lower() == "true"
         self.ready_timeout_seconds = int(os.getenv("MCP_READY_TIMEOUT", "300"))  # 5 minutes
+
 
 # Global rules configuration
 mcp_rules = MCPRules()
@@ -57,7 +61,7 @@ mcp_rules = MCPRules()
 def apply_post_creation_rules(ctx: Context, instance_id: int, ssh: bool, jupyter: bool, original_label: str) -> str:
     """Apply MCP rules after instance creation"""
     rule_results = []
-    
+
     # Rule 1: Auto-attach SSH key for SSH/Jupyter instances
     if mcp_rules.auto_attach_ssh_on_create and (ssh or jupyter):
         try:
@@ -65,7 +69,7 @@ def apply_post_creation_rules(ctx: Context, instance_id: int, ssh: bool, jupyter
             rule_results.append(f"🔑 Auto SSH Key Attachment:\n{ssh_result}")
         except Exception as ssh_error:
             return f"⚠️  SSH key attachment failed: {str(ssh_error)}, try again or recreate instance"
-    
+
     # Rule 2: Auto-label instance if no label provided
     if mcp_rules.auto_label_instances and not original_label:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -75,7 +79,7 @@ def apply_post_creation_rules(ctx: Context, instance_id: int, ssh: bool, jupyter
             rule_results.append(f"🏷️  Auto-labeling: {label_result}")
         except Exception as label_error:
             rule_results.append(f"⚠️  Auto-labeling failed: {str(label_error)}")
-            
+
     # Rule 3: Wait for instance readiness (if enabled)
     if mcp_rules.wait_for_instance_ready:
         try:
@@ -83,12 +87,13 @@ def apply_post_creation_rules(ctx: Context, instance_id: int, ssh: bool, jupyter
             rule_results.append(f"⏰ Instance Readiness Check:\n{ready_result}")
         except Exception as ready_error:
             return f"⚠️ Readiness check failed: {str(ready_error)}"
-            
+
     # Format results
     if rule_results:
         return "\n📋 MCP Rules Applied:\n" + "\n".join(f"  {result}" for result in rule_results) + "\n"
     else:
         return "\n📋 No MCP rules applied (all disabled or not applicable)\n"
+
 
 def get_instance_ssh_info(ctx: Context, instance_id: int) -> tuple[str, int]:
     """Get instance ssh connection info"""
@@ -105,7 +110,7 @@ def get_instance_ssh_info(ctx: Context, instance_id: int) -> tuple[str, int]:
 def wait_for_instance_ready(ctx: Context, instance_id: int, timeout_seconds: int = 300) -> str:
     """Wait for instance to become ready"""
     start_time = time.time()
-    
+
     while time.time() - start_time < timeout_seconds:
         try:
             # Get instance details to check status
@@ -115,23 +120,23 @@ def wait_for_instance_ready(ctx: Context, instance_id: int, timeout_seconds: int
                 f"/instances/{instance_id}/",
                 query_params={"owner": "me"}
             )
-            
+
             instance = response.get("instances", {})
             status = instance.get("actual_status", "unknown")
-            
+
             if status == "running":
                 elapsed = time.time() - start_time
                 return f"✅ Instance {instance_id} is ready! (took {elapsed:.1f} seconds)"
             elif status in ["failed", "exited"]:
                 return f"❌ Instance {instance_id} failed to start (status: {status})"
-            
+
             # Wait before next check
             time.sleep(5)
-            
+
         except Exception as e:
             logger.warning(f"Error checking instance readiness: {e}")
             time.sleep(5)
-    
+
     return f"⏰ Timeout error. Now destroy instance {instance_id} and recreate similar instance again."
 
 
@@ -156,7 +161,7 @@ class VastAIClient:
         api_key = os.getenv("VAST_API_KEY")
         if api_key:
             return api_key
-        
+
         return None
 
     def _build_url(self, endpoint: str, query_params: Dict = None) -> str:
@@ -212,7 +217,7 @@ def parse_query_string(query_list: List[str]) -> Dict:
     """Parse query strings similar to vast CLI"""
     if not query_list:
         return {}
-    
+
     query = {}
     for item in query_list:
         # Simple parsing - in real implementation this would be more complex
@@ -230,14 +235,14 @@ def parse_query_string(query_list: List[str]) -> Dict:
                     query[key] = {"eq": value}
             except:
                 query[key] = {"eq": value}
-    
+
     return query
 
 
 def get_ssh_key(ssh_key_str: str) -> str:
     """Process SSH key string, validating and reading from file if necessary"""
     ssh_key = ssh_key_str.strip()
-    
+
     # If it's a file path, read the key from the file
     if os.path.exists(ssh_key_str):
         try:
@@ -296,12 +301,12 @@ def _execute_ssh_command(remote_host: str, remote_user: str, remote_port: int, c
     Returns a dict with 'success', 'stdout', 'stderr', 'exit_status', and 'error' keys.
     """
     client = paramiko.SSHClient()
-    
+
     try:
         # Load system host keys for security
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+
         logger.info(f"Connecting to {remote_host}:{remote_port} as {remote_user}")
 
         # Check if private key file exists
@@ -343,7 +348,7 @@ def _execute_ssh_command(remote_host: str, remote_user: str, remote_port: int, c
                             'stderr': '',
                             'exit_status': -1
                         }
-        
+
         # Connect to the server
         client.connect(
             hostname=remote_host,
@@ -352,18 +357,18 @@ def _execute_ssh_command(remote_host: str, remote_user: str, remote_port: int, c
             pkey=private_key,
             timeout=30
         )
-        
+
         logger.info("SSH connection successful")
-        
+
         # Execute the command
         logger.info(f"Executing command: '{command}'")
         stdin, stdout, stderr = client.exec_command(command)
-        
+
         # Read the output
         stdout_output = stdout.read().decode('utf-8').strip()
         stderr_output = stderr.read().decode('utf-8').strip()
         exit_status = stdout.channel.recv_exit_status()
-        
+
         return {
             'success': exit_status == 0,
             'stdout': stdout_output,
@@ -371,7 +376,7 @@ def _execute_ssh_command(remote_host: str, remote_user: str, remote_port: int, c
             'exit_status': exit_status,
             'error': None
         }
-        
+
     except FileNotFoundError:
         return {
             'success': False,
@@ -404,7 +409,7 @@ def _execute_ssh_command(remote_host: str, remote_user: str, remote_port: int, c
             'stderr': '',
             'exit_status': -1
         }
-    
+
     finally:
         # Always close the connection
         if client:
@@ -412,36 +417,36 @@ def _execute_ssh_command(remote_host: str, remote_user: str, remote_port: int, c
         logger.info("SSH connection closed")
 
 
-def _prepare_instance(host: str, port: int, user_name: str) -> str:
-    """
-    Prepare instance, create user, disable sudo password and install packages
-    Args:
-        host: str
-        port: int
-        user_name: str - user to create
-    """
-    commands = [
-        "apt update && apt upgrade -y",
-        f"useradd -m --shell /bin/bash {user_name}",
-        f"usermod -aG sudo {user_name}",
-        f"mkdir -p /home/{user_name}/.ssh",
-        f"mkdir -p /home/{user_name}/.bash_profile",
-        f"cp ~/.ssh/authorized_keys /home/{user_name}/.ssh/authorized_keys",
-        f"chown -R {user_name}:{user_name} /home/{user_name}/.ssh",
-        f"bash -c 'echo \"%sudo ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/90-nopasswd-sudo'",
-        f"chmod 0440 /etc/sudoers.d/90-nopasswd-sudo"
-    ]
-
-    results = []
-    for cmd in commands:
-        result = _execute_ssh_command(host, "root", port, cmd)
-        if not result['success']:
-            raise Exception(f"❌ Failed to prepare instance at step: {cmd}\nError: {result['error']}\nSTDOUT: {result['stdout']}\nSTDERR: {result['stderr']}")
-        results.append(f"✅ {cmd}: {result['stdout']}")
-    
-    results.append(f"🔒 Now you can connect: ssh -i {SSH_KEY_FILE} -p {port} {user_name}@{host}")
-
-    return f"🎉 Instance prepared successfully for user '{user_name}'!\n\n" + "\n".join(results)
+# def _prepare_instance(host: str, port: int, user_name: str) -> str:
+#     """
+#     Prepare instance, create user, disable sudo password and install packages
+#     Args:
+#         host: str
+#         port: int
+#         user_name: str - user to create
+#     """
+#     commands = [
+#         "apt update && apt upgrade -y",
+#         f"useradd -m --shell /bin/bash {user_name}",
+#         f"usermod -aG sudo {user_name}",
+#         f"mkdir -p /home/{user_name}/.ssh",
+#         f"mkdir -p /home/{user_name}/.bash_profile",
+#         f"cp ~/.ssh/authorized_keys /home/{user_name}/.ssh/authorized_keys",
+#         f"chown -R {user_name}:{user_name} /home/{user_name}/.ssh",
+#         f"bash -c 'echo \"%sudo ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/90-nopasswd-sudo'",
+#         f"chmod 0440 /etc/sudoers.d/90-nopasswd-sudo"
+#     ]
+#
+#     results = []
+#     for cmd in commands:
+#         result = _execute_ssh_command(host, "root", port, cmd)
+#         if not result['success']:
+#             raise Exception(f"❌ Failed to prepare instance at step: {cmd}\nError: {result['error']}\nSTDOUT: {result['stdout']}\nSTDERR: {result['stderr']}")
+#         results.append(f"✅ {cmd}: {result['stdout']}")
+#
+#     results.append(f"🔒 Now you can connect: ssh -i {SSH_KEY_FILE} -p {port} {user_name}@{host}")
+#
+#     return f"🎉 Instance prepared successfully for user '{user_name}'!\n\n" + "\n".join(results)
 
 
 def filter_templates_by_name(templates: list[dict], search_name: str) -> List[Dict]:
@@ -458,27 +463,28 @@ def filter_templates_by_name(templates: list[dict], search_name: str) -> List[Di
     if not templates:
         print("No templates found in API response")
         return []
-    
+
     # Split search name into words and convert to lowercase for case-insensitive search
     search_words = [word.lower().strip() for word in search_name.split() if word.strip()]
-    
+
     if not search_words:
         print("No valid search words provided")
         return []
-    
+
     # Filter templates by name word matching
     matching_templates = []
     for template in templates:
         template_name = template.get('name', '').lower()
-        
+
         # Check if any search word is found in the template name
         name_matches = any(search_word in template_name for search_word in search_words)
-        
+
         if name_matches:
             matching_templates.append(template)
-    
-    print(f"Found {len(matching_templates)} templates with name containing words from '{search_name}' out of {len(templates)} total templates")
-    
+
+    print(
+        f"Found {len(matching_templates)} templates with name containing words from '{search_name}' out of {len(templates)} total templates")
+
     return matching_templates
 
 
@@ -489,10 +495,10 @@ def _sftp_makedirs(sftp, remote_path):
     while len(path) > 1:
         dirs.append(path)
         path = os.path.dirname(path)
-    
+
     # Reverse to create from parent to child
     dirs.reverse()
-    
+
     for directory in dirs:
         try:
             sftp.stat(directory)
@@ -502,6 +508,7 @@ def _sftp_makedirs(sftp, remote_path):
             except Exception:
                 # Might fail if parent doesn't exist, ignore and continue
                 pass
+
 
 # Create the MCP server
 mcp = FastMCP(
@@ -558,12 +565,12 @@ def show_instances(ctx: Context, owner: str = "me") -> str:
         )
 
         instances = response.get("instances", [])
-        
+
         if not instances:
             return "No instances found."
 
         result = f"Instances ({len(instances)} total):\n\n"
-        
+
         for instance in instances:
             result += f"ID: {instance.get('id', 'N/A')}\n"
             result += f"  Status: {instance.get('actual_status', 'unknown')}\n"
@@ -591,8 +598,9 @@ def search_offers(ctx: Context, query: str = "", limit: int = 20, order: str = "
         client = get_vast_client()
 
         # Default query for reliable machines
-        default_query = {"verified": {"eq": True}, "external": {"eq": False}, "rentable": {"eq": True}, "rented": {"eq": False}}
-        
+        default_query = {"verified": {"eq": True}, "external": {"eq": False}, "rentable": {"eq": True},
+                         "rented": {"eq": False}}
+
         # Parse additional query parameters
         if query:
             query_parts = query.split()
@@ -626,7 +634,7 @@ def search_offers(ctx: Context, query: str = "", limit: int = 20, order: str = "
             "allocated_storage": 5.0
         }
         query_obj.update(default_query)
-        
+
         if limit:
             query_obj["limit"] = limit
 
@@ -643,12 +651,12 @@ def search_offers(ctx: Context, query: str = "", limit: int = 20, order: str = "
         )
 
         offers = response.get("offers", [])
-        
+
         if not offers:
             return "No offers found matching your criteria."
 
         result = f"Available Offers ({len(offers)} found):\n\n"
-        
+
         for offer in offers[:limit]:
             result += f"ID: {offer.get('id', 'N/A')}\n"
             result += f"  GPU: {offer.get('gpu_name', 'N/A')} x{offer.get('num_gpus', 1)}\n"
@@ -670,10 +678,10 @@ def search_offers(ctx: Context, query: str = "", limit: int = 20, order: str = "
 
 
 @mcp.tool()
-def create_instance(ctx: Context, offer_id: int, image: str, disk: float = 10.0, 
-                   ssh: bool = False, jupyter: bool = False, direct: bool = False,
-                   env: dict = None, label: str = "", bid_price: float = None, 
-                   template_id: int = None) -> str:
+def create_instance(ctx: Context, offer_id: int, image: str, disk: float = 10.0,
+                    ssh: bool = False, jupyter: bool = False, direct: bool = False,
+                    env: dict = None, label: str = "", bid_price: float = None,
+                    template_id: int = None) -> str:
     """Create a new instance from an offer
     
     Parameters:
@@ -715,7 +723,7 @@ def create_instance(ctx: Context, offer_id: int, image: str, disk: float = 10.0,
 
         if bid_price is not None:
             request_data["price"] = bid_price
-            
+
         if template_id is not None:
             request_data["template_id"] = template_id
 
@@ -728,10 +736,10 @@ def create_instance(ctx: Context, offer_id: int, image: str, disk: float = 10.0,
         if response.get("success"):
             instance_id = response.get("new_contract")
             result = f"Instance created successfully!\nInstance ID: {instance_id}\nStatus: Starting up...\n"
-            
+
             # Apply MCP rules for post-creation actions
             result += apply_post_creation_rules(ctx, instance_id, ssh, jupyter, label)
-            
+
             return result
         else:
             return f"Failed to create instance: {response.get('msg', 'Unknown error')}"
@@ -817,7 +825,7 @@ def search_volumes(ctx: Context, query: str = "", limit: int = 20) -> str:
 
         # Default query for reliable storage
         default_query = {"verified": {"eq": True}, "external": {"eq": False}, "disk_space": {"gte": 1}}
-        
+
         # Parse additional query parameters
         if query:
             query_parts = query.split()
@@ -838,12 +846,12 @@ def search_volumes(ctx: Context, query: str = "", limit: int = 20) -> str:
         )
 
         offers = response.get("offers", [])
-        
+
         if not offers:
             return "No volume offers found matching your criteria."
 
         result = f"Available Volume Offers ({len(offers)} found):\n\n"
-        
+
         for offer in offers[:limit]:
             result += f"ID: {offer.get('id', 'N/A')}\n"
             result += f"  Storage: {offer.get('disk_space', 0):.1f} GB\n"
@@ -951,30 +959,33 @@ def show_instance(ctx: Context, instance_id: int) -> str:
         instance = response.get("instances", {})
         if not instance:
             return f"Instance {instance_id} not found."
-        
+
         result = f"Instance {instance_id} Details:\n\n"
-        
+
         # Basic status information
         result += f"Status: {instance.get('actual_status', 'unknown')}\n"
         result += f"Intended Status: {instance.get('intended_status', 'unknown')}\n"
         result += f"Current State: {instance.get('cur_state', 'unknown')}\n"
         result += f"Next State: {instance.get('next_state', 'unknown')}\n"
         result += f"Label: {instance.get('label', 'No label')}\n"
-        
+
         # SSH connection info
         if instance.get('ssh_host'):
-            result += f"SSH Host: {instance.get('ssh_host')}\n"
+            result += f"SSH Proxy Host: {instance.get('ssh_host')}\n"
         if instance.get('ssh_port'):
-            result += f"SSH Port: {instance.get('ssh_port')}\n"
+            port1 = instance.get('ssh_port')
+            port2 = instance.get('ssh_port') + 1
+            result += f"SSH Proxy Ports: port1: {port1} or port2:{port2}\n"
         if instance.get('ssh_idx'):
-            result += f"SSH Index: {instance.get('ssh_idx')}\n"
-        
+            result += f"SSH Proxy Index: {instance.get('ssh_idx')}\n"
+
         # Network information
         if instance.get('public_ipaddr'):
-            result += f"Public IP: {instance.get('public_ipaddr')}\n"
+            result += f"Public IP(SSH Direct IP): {instance.get('public_ipaddr')}\n"
+
         if instance.get('local_ipaddrs'):
             result += f"Local IPs: {', '.join(instance.get('local_ipaddrs', []))}\n"
-        
+
         # Template and image info
         if instance.get('template_id'):
             result += f"Template ID: {instance.get('template_id')}\n"
@@ -985,17 +996,17 @@ def show_instance(ctx: Context, instance_id: int) -> str:
             result += f"Image Args: {instance.get('image_args')}\n"
         if instance.get('image_runtype'):
             result += f"Run Type: {instance.get('image_runtype')}\n"
-        
+
         # Environment and startup
         if instance.get('extra_env'):
             result += f"Extra Env: {instance.get('extra_env')}\n"
         if instance.get('onstart'):
             result += f"On Start: {instance.get('onstart')}\n"
-        
+
         # Jupyter info
         if instance.get('jupyter_token'):
             result += f"Jupyter Token: {instance.get('jupyter_token')}\n"
-        
+
         # System utilization
         if instance.get('gpu_util'):
             result += f"GPU Utilization: {instance.get('gpu_util'):.1%}\n"
@@ -1007,7 +1018,7 @@ def show_instance(ctx: Context, instance_id: int) -> str:
             result += f"CUDA Version: {instance.get('cuda_max_good')}\n"
         if instance.get('driver_version'):
             result += f"Driver Version: {instance.get('driver_version')}\n"
-        
+
         # Storage and memory
         if instance.get('disk_util'):
             result += f"Disk Utilization: {instance.get('disk_util'):.1%}\n"
@@ -1021,7 +1032,7 @@ def show_instance(ctx: Context, instance_id: int) -> str:
             result += f"Memory Limit: {instance.get('mem_limit')} MB\n"
         if instance.get('vmem_usage'):
             result += f"Virtual Memory: {instance.get('vmem_usage')} MB\n"
-        
+
         # Port information
         if instance.get('direct_port_start') and instance.get('direct_port_end'):
             result += f"Direct Ports: {instance.get('direct_port_start')}-{instance.get('direct_port_end')}\n"
@@ -1029,7 +1040,7 @@ def show_instance(ctx: Context, instance_id: int) -> str:
             result += f"Machine SSH Port: {instance.get('machine_dir_ssh_port')}\n"
         if instance.get('ports'):
             result += f"Open Ports: {instance.get('ports')}\n"
-        
+
         # Runtime information
         if instance.get('uptime_mins'):
             result += f"Uptime: {instance.get('uptime_mins')} minutes\n"
@@ -1044,7 +1055,7 @@ def show_instance(ctx: Context, instance_id: int) -> str:
 
 
 @mcp.tool()
-def logs(ctx: Context, instance_id: int, tail: str = "1000", filter_text: str = "", 
+def logs(ctx: Context, instance_id: int, tail: str = "1000", filter_text: str = "",
          daemon_logs: bool = False) -> str:
     """Get logs for an instance"""
     try:
@@ -1071,7 +1082,7 @@ def logs(ctx: Context, instance_id: int, tail: str = "1000", filter_text: str = 
         # Poll for logs (simplified version)
         import time
         result_url = response["result_url"]
-        
+
         for i in range(10):  # Reduced polling attempts for MCP
             time.sleep(0.3)
             try:
@@ -1099,7 +1110,7 @@ def attach_ssh(ctx: Context, instance_id: int) -> str:
     """Attach an SSH key to an instance for secure access"""
     try:
         client = get_vast_client()
-        
+
         with open(SSH_KEY_PUBLIC_FILE, "r") as f:
             ssh_key = f.read()
 
@@ -1139,12 +1150,13 @@ def search_templates(ctx: Context, name_filter: str = None) -> str:
         response = client._make_request(
             "GET",
             "/template/",
-            query_params={"order_by": [{"col":"sort_order","dir":"asc"}], "select_filters": {"recommended":{"eq":True},"private":{"eq":False}}}
+            query_params={"order_by": [{"col": "sort_order", "dir": "asc"}],
+                          "select_filters": {"recommended": {"eq": True}, "private": {"eq": False}}}
         )
 
         if response.get("success") is False:
             return f"Failed to search templates: {response.get('msg', response.get('error', 'Unknown error'))}"
-        
+
         templates = response.get("templates", [])
 
         # Filter templates by name
@@ -1152,17 +1164,17 @@ def search_templates(ctx: Context, name_filter: str = None) -> str:
             templates = filter_templates_by_name(templates, name_filter)
 
         templates_found = len(templates)
-        
+
         if not templates:
             return "No templates found."
 
         result = f"Available Templates ({templates_found} found):\n\n"
-        
+
         for template in templates:
             result += f"ID: {template.get('id', 'N/A')}\n"
             result += f"  Name: {template.get('name', 'No name')}\n"
             result += f"  Image: {template.get('image', 'N/A')}\n"
-            
+
             # Additional fields that might be present
             if template.get('description'):
                 result += f"  Description: {template.get('description')}\n"
@@ -1178,7 +1190,7 @@ def search_templates(ctx: Context, name_filter: str = None) -> str:
                 result += f"  Jupyter: {template.get('jupyter')}\n"
             if template.get('ssh'):
                 result += f"  SSH: {template.get('ssh')}\n"
-            
+
             result += "\n"
 
         return result
@@ -1189,104 +1201,107 @@ def search_templates(ctx: Context, name_filter: str = None) -> str:
 
 
 @mcp.tool()
-def configure_mcp_rules(ctx: Context, auto_attach_ssh: bool = None, auto_label: bool = None, 
-                       wait_for_ready: bool = None, label_prefix: str = None) -> str:
+def configure_mcp_rules(ctx: Context, auto_attach_ssh: bool = None, auto_label: bool = None,
+                        wait_for_ready: bool = None, label_prefix: str = None) -> str:
     """Configure MCP automation rules"""
     global mcp_rules
-    
+
     changes = []
-    
+
     if auto_attach_ssh is not None:
         mcp_rules.auto_attach_ssh_on_create = auto_attach_ssh
         changes.append(f"Auto-attach SSH: {auto_attach_ssh}")
-    
+
     if auto_label is not None:
         mcp_rules.auto_label_instances = auto_label
         changes.append(f"Auto-label instances: {auto_label}")
-    
+
     if wait_for_ready is not None:
         mcp_rules.wait_for_instance_ready = wait_for_ready
         changes.append(f"Wait for ready: {wait_for_ready}")
-    
+
     if label_prefix is not None:
         mcp_rules.default_label_prefix = label_prefix
         changes.append(f"Label prefix: {label_prefix}")
-    
+
     if changes:
         result = "⚙️  MCP Rules Configuration Updated:\n\n"
         result += "\n".join(f"  • {change}" for change in changes)
         result += "\n\nCurrent Configuration:\n"
     else:
         result = "⚙️  Current MCP Rules Configuration:\n\n"
-    
+
     result += f"  • Auto-attach SSH: {mcp_rules.auto_attach_ssh_on_create}\n"
     result += f"  • Auto-label instances: {mcp_rules.auto_label_instances}\n"
     result += f"  • Label prefix: {mcp_rules.default_label_prefix}\n"
     result += f"  • Wait for ready: {mcp_rules.wait_for_instance_ready}\n"
     result += f"  • Ready timeout: {mcp_rules.ready_timeout_seconds}s\n"
-    
+
     return result
 
 
+# @mcp.tool()
+# def execute_command(ctx: Context, instance_id: int, command: str) -> str:
+#     """Execute a (constrained) remote command only available on stopped instances. Use ssh to run commands on running instances.
+#
+#     Available commands:
+#     - ls: List directory contents
+#     - rm: Remove files or directories
+#     - du: Summarize device usage for a set of files
+#
+#     Examples:
+#     - 'ls -l -o -r'
+#     - 'rm -r home/delete_this.txt'
+#     - 'du -d2 -h'
+#     """
+#     try:
+#         client = get_vast_client()
+#
+#         # Execute the command
+#         response = client._make_request(
+#             "PUT",
+#             f"/instances/command/{instance_id}/",
+#             json_data={"command": command}
+#         )
+#
+#         if response.get("success"):
+#             result_url = response.get("result_url")
+#             if not result_url:
+#                 return f"Command executed but no result URL provided: {response}"
+#
+#             # Poll for results (simplified version for MCP)
+#             for i in range(30):  # Poll up to 30 times
+#                 time.sleep(0.3)
+#                 try:
+#                     result_response = client.session.get(result_url)
+#                     if result_response.status_code == 200:
+#                         output = result_response.text
+#
+#                         # Filter out writeable_path if provided
+#                         writeable_path = response.get("writeable_path", "")
+#                         if writeable_path:
+#                             output = output.replace(writeable_path, "")
+#
+#                         return f"Command executed successfully on instance {instance_id}:\n\n{output}"
+#                 except Exception as e:
+#                     logger.warning(f"Error polling result URL: {e}")
+#                     continue
+#
+#             return f"Command executed on instance {instance_id} but results are still being prepared. Please try again in a moment."
+#         else:
+#             return f"Failed to execute command on instance {instance_id}: {response}"
+#
+#     except Exception as e:
+#         logger.error(f"Error executing command: {e}")
+#         return f"Error executing command on instance {instance_id}: {str(e)}"
+
+
 @mcp.tool()
-def execute_command(ctx: Context, instance_id: int, command: str) -> str:
-    """Execute a (constrained) remote command only available on stopped instances. Use ssh to run commands on running instances.
-
-    Available commands:
-    - ls: List directory contents
-    - rm: Remove files or directories  
-    - du: Summarize device usage for a set of files
-    
-    Examples:
-    - 'ls -l -o -r'
-    - 'rm -r home/delete_this.txt'
-    - 'du -d2 -h'
-    """
-    try:
-        client = get_vast_client()
-
-        # Execute the command
-        response = client._make_request(
-            "PUT",
-            f"/instances/command/{instance_id}/",
-            json_data={"command": command}
-        )
-
-        if response.get("success"):
-            result_url = response.get("result_url")
-            if not result_url:
-                return f"Command executed but no result URL provided: {response}"
-
-            # Poll for results (simplified version for MCP)
-            for i in range(30):  # Poll up to 30 times
-                time.sleep(0.3)
-                try:
-                    result_response = client.session.get(result_url)
-                    if result_response.status_code == 200:
-                        output = result_response.text
-                        
-                        # Filter out writeable_path if provided
-                        writeable_path = response.get("writeable_path", "")
-                        if writeable_path:
-                            output = output.replace(writeable_path, "")
-                        
-                        return f"Command executed successfully on instance {instance_id}:\n\n{output}"
-                except Exception as e:
-                    logger.warning(f"Error polling result URL: {e}")
-                    continue
-
-            return f"Command executed on instance {instance_id} but results are still being prepared. Please try again in a moment."
-        else:
-            return f"Failed to execute command on instance {instance_id}: {response}"
-
-    except Exception as e:
-        logger.error(f"Error executing command: {e}")
-        return f"Error executing command on instance {instance_id}: {str(e)}"
-
-
-@mcp.tool()
-def ssh_execute_command(ctx: Context, remote_host: str, remote_user: str, remote_port: int, 
-                       command: str) -> str:
+def ssh_execute_command(ctx: Context,
+                        remote_host: str,
+                        remote_user: str,
+                        remote_port: int,
+                        command: str) -> str:
     """Execute a command on a remote host via SSH
     
     Parameters:
@@ -1295,24 +1310,26 @@ def ssh_execute_command(ctx: Context, remote_host: str, remote_user: str, remote
     - remote_port: The SSH port number (typically 22 or custom port like 34608)
     - command: The command to execute on the remote host
     - private_key_file: Path to the SSH private key file (optional, defaults to ~/.ssh/id_rsa)
+
+    In case connection error like "Error reading SSH protocol banner" - use port2 or direct instance ip,port instead
     """
-    
+
     # Use the helper function
     result_data = _execute_ssh_command(remote_host, remote_user, remote_port, command)
-    
+
     # Format result for display
     result = f"SSH Command Execution on {remote_host}:{remote_port}\n"
     result += f"Command: {command}\n"
     result += f"Exit Status: {result_data['exit_status']}\n\n"
-    
+
     if result_data['stdout']:
         result += "--- STDOUT ---\n"
         result += result_data['stdout'] + "\n\n"
-    
+
     if result_data['stderr']:
         result += "--- STDERR ---\n"
         result += result_data['stderr'] + "\n\n"
-    
+
     if result_data['success']:
         result += "✅ Command executed successfully"
     else:
@@ -1320,13 +1337,17 @@ def ssh_execute_command(ctx: Context, remote_host: str, remote_user: str, remote
             result += f"❌ Command failed: {result_data['error']}"
         else:
             result += "❌ Command failed"
-    
+
     return result
 
 
 @mcp.tool()
-def ssh_execute_background_command(ctx: Context, remote_host: str, remote_user: str, remote_port: int, 
-                                 command: str, task_name: str = None) -> str:
+def ssh_execute_background_command(ctx: Context,
+                                   remote_host: str,
+                                   remote_user: str,
+                                   remote_port: int,
+                                   command: str,
+                                   task_name: str = None) -> str:
     """Execute a long-running command in the background on a remote host via SSH using nohup
     
     Parameters:
@@ -1338,29 +1359,31 @@ def ssh_execute_background_command(ctx: Context, remote_host: str, remote_user: 
     - task_name: Optional name for the task (for easier identification)
     
     Returns task information including task ID, process ID, and log file path
+
+    In case connection error like "Error reading SSH protocol banner" - use port2 or direct instance ip,port instead
     """
 
     # Generate unique task ID
     task_id = str(uuid.uuid4())[:8]
     if task_name:
         task_id = f"{task_name}_{task_id}"
-    
+
     # Create log file path
     log_file = f"/tmp/ssh_task_{task_id}.log"
     pid_file = f"/tmp/ssh_task_{task_id}.pid"
-    
+
     client = paramiko.SSHClient()
-    
+
     try:
         # Load system host keys and connect (same as regular SSH command)
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+
         logger.info(f"Connecting to {remote_host}:{remote_port} as {remote_user}")
-        
+
         if not os.path.exists(SSH_KEY_FILE):
             return f"Error: Private key file not found at: {SSH_KEY_FILE}"
-        
+
         # Load the private key (same logic as regular SSH)
         try:
             private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_FILE)
@@ -1378,7 +1401,7 @@ def ssh_execute_background_command(ctx: Context, remote_host: str, remote_user: 
                         private_key = paramiko.DSSKey.from_private_key_file(SSH_KEY_FILE)
                     except:
                         return f"Error: Could not load private key from {SSH_KEY_FILE}: {str(key_error)}"
-        
+
         # Connect to the server
         client.connect(
             hostname=remote_host,
@@ -1387,9 +1410,9 @@ def ssh_execute_background_command(ctx: Context, remote_host: str, remote_user: 
             pkey=private_key,
             timeout=30
         )
-        
+
         logger.info("SSH connection successful")
-        
+
         # Prepare the background command with nohup
         # We'll wrap the command to capture the PID and redirect output
         bg_command = f"""
@@ -1404,23 +1427,23 @@ else
     echo "Failed to start background task"
 fi
 """
-        
+
         logger.info(f"Starting background task: {task_id}")
         stdin, stdout, stderr = client.exec_command(bg_command)
-        
+
         # Get the process ID
         stdout_output = stdout.read().decode('utf-8').strip()
         stderr_output = stderr.read().decode('utf-8').strip()
         exit_status = stdout.channel.recv_exit_status()
-        
+
         if stderr_output or exit_status != 0:
             return f"Error starting background task:\nSTDERR: {stderr_output}\nExit Status: {exit_status}"
-        
+
         try:
             process_id = int(stdout_output)
         except ValueError:
             return f"Failed to parse process ID: {stdout_output}"
-        
+
         # Build result with task information
         result = f"🚀 Background Task Started Successfully!\n\n"
         result += f"Task ID: {task_id}\n"
@@ -1437,12 +1460,12 @@ fi
         result += f"   remote_port: {remote_port}\n"
         result += f"   task_id: {task_id}\n"
         result += f"   process_id: {process_id}"
-        
+
         return result
-        
+
     except Exception as e:
         return f"Error starting background task: {str(e)}"
-    
+
     finally:
         if client:
             client.close()
@@ -1450,8 +1473,13 @@ fi
 
 
 @mcp.tool()
-def ssh_check_background_task(ctx: Context, remote_host: str, remote_user: str, remote_port: int,
-                            task_id: str, process_id: int, tail_lines: int = 50) -> str:
+def ssh_check_background_task(ctx: Context,
+                              remote_host: str,
+                              remote_user: str,
+                              remote_port: int,
+                              task_id: str,
+                              process_id: int,
+                              tail_lines: int = 50) -> str:
     """Check the status of a background SSH task and get its output
     
     Parameters:
@@ -1462,21 +1490,23 @@ def ssh_check_background_task(ctx: Context, remote_host: str, remote_user: str, 
     - process_id: The process ID returned by ssh_execute_background_command
     - private_key_file: Path to the SSH private key file (optional)
     - tail_lines: Number of recent log lines to show (default: 50)
+
+    In case connection error like "Error reading SSH protocol banner" - use port2 or direct instance ip,port instead
     """
 
     log_file = f"/tmp/ssh_task_{task_id}.log"
     pid_file = f"/tmp/ssh_task_{task_id}.pid"
-    
+
     client = paramiko.SSHClient()
-    
+
     try:
         # Connect (same setup as other SSH functions)
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+
         if not os.path.exists(SSH_KEY_FILE):
             return f"Error: Private key file not found at: {SSH_KEY_FILE}"
-        
+
         # Load private key
         try:
             private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_FILE)
@@ -1491,7 +1521,7 @@ def ssh_check_background_task(ctx: Context, remote_host: str, remote_user: str, 
                         private_key = paramiko.DSSKey.from_private_key_file(SSH_KEY_FILE)
                     except:
                         return f"Error loading private key: {str(key_error)}"
-        
+
         client.connect(
             hostname=remote_host,
             port=remote_port,
@@ -1499,22 +1529,22 @@ def ssh_check_background_task(ctx: Context, remote_host: str, remote_user: str, 
             pkey=private_key,
             timeout=30
         )
-        
+
         # Check if process is still running
         check_process_cmd = f"kill -0 {process_id} 2>/dev/null && echo 'RUNNING' || echo 'STOPPED'"
         stdin, stdout, stderr = client.exec_command(check_process_cmd)
         process_status = stdout.read().decode('utf-8').strip()
-        
+
         # Get log file content
         log_cmd = f"if [ -f {log_file} ]; then tail -n {tail_lines} {log_file}; else echo 'Log file not found'; fi"
         stdin, stdout, stderr = client.exec_command(log_cmd)
         log_content = stdout.read().decode('utf-8').strip()
-        
+
         # Get log file size for progress indication
         size_cmd = f"if [ -f {log_file} ]; then wc -l {log_file} | cut -d' ' -f1; else echo '0'; fi"
         stdin, stdout, stderr = client.exec_command(size_cmd)
         log_lines = stdout.read().decode('utf-8').strip()
-        
+
         # Build status report
         result = f"📊 Background Task Status Report\n\n"
         result += f"Task ID: {task_id}\n"
@@ -1522,36 +1552,40 @@ def ssh_check_background_task(ctx: Context, remote_host: str, remote_user: str, 
         result += f"Status: {'🟢 RUNNING' if process_status == 'RUNNING' else '🔴 STOPPED/COMPLETED'}\n"
         result += f"Log Lines: {log_lines}\n"
         result += f"Host: {remote_host}:{remote_port}\n\n"
-        
+
         if process_status == "RUNNING":
             result += f"🔄 Task is still running...\n\n"
         else:
             result += f"✅ Task has completed or stopped\n\n"
-        
+
         result += f"📄 Recent Log Output (last {tail_lines} lines):\n"
-        result += f"{'='*50}\n"
+        result += f"{'=' * 50}\n"
         result += log_content
-        result += f"\n{'='*50}\n\n"
-        
+        result += f"\n{'=' * 50}\n\n"
+
         if process_status == "RUNNING":
             result += f"💡 Task is still running. Check again later for updates."
         else:
             result += f"💡 Task completed. Use 'ssh_execute_command' to clean up files if needed:\n"
             result += f"   rm {log_file} {pid_file}"
-        
+
         return result
-        
+
     except Exception as e:
         return f"Error checking background task: {str(e)}"
-    
+
     finally:
         if client:
             client.close()
 
 
 @mcp.tool()
-def ssh_kill_background_task(ctx: Context, remote_host: str, remote_user: str, remote_port: int,
-                           task_id: str, process_id: int) -> str:
+def ssh_kill_background_task(ctx: Context,
+                             remote_host: str,
+                             remote_user: str,
+                             remote_port: int,
+                             task_id: str,
+                             process_id: int) -> str:
     """Kill a running background SSH task
     
     Parameters:
@@ -1561,21 +1595,23 @@ def ssh_kill_background_task(ctx: Context, remote_host: str, remote_user: str, r
     - task_id: The task ID returned by ssh_execute_background_command
     - process_id: The process ID returned by ssh_execute_background_command
     - private_key_file: Path to the SSH private key file (optional)
+
+    In case connection error like "Error reading SSH protocol banner" - use port2 or direct instance ip,port instead
     """
 
     log_file = f"/tmp/ssh_task_{task_id}.log"
     pid_file = f"/tmp/ssh_task_{task_id}.pid"
-    
+
     client = paramiko.SSHClient()
-    
+
     try:
         # Connect (same setup as other SSH functions)
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+
         if not os.path.exists(SSH_KEY_FILE):
             return f"Error: Private key file not found at: {SSH_KEY_FILE}"
-        
+
         # Load private key
         try:
             private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_FILE)
@@ -1590,7 +1626,7 @@ def ssh_kill_background_task(ctx: Context, remote_host: str, remote_user: str, r
                         private_key = paramiko.DSSKey.from_private_key_file(SSH_KEY_FILE)
                     except:
                         return f"Error loading private key: {str(key_error)}"
-        
+
         client.connect(
             hostname=remote_host,
             port=remote_port,
@@ -1598,12 +1634,12 @@ def ssh_kill_background_task(ctx: Context, remote_host: str, remote_user: str, r
             pkey=private_key,
             timeout=30
         )
-        
+
         # Check if process is running first
         check_cmd = f"kill -0 {process_id} 2>/dev/null && echo 'RUNNING' || echo 'NOT_RUNNING'"
         stdin, stdout, stderr = client.exec_command(check_cmd)
         status = stdout.read().decode('utf-8').strip()
-        
+
         if status == "NOT_RUNNING":
             result = f"⚠️ Task {task_id} (PID: {process_id}) is not running\n\n"
             result += f"The process may have already completed or been killed.\n"
@@ -1624,41 +1660,45 @@ fi
 """
             stdin, stdout, stderr = client.exec_command(kill_cmd)
             kill_result = stdout.read().decode('utf-8').strip()
-            
+
             result = f"🛑 Background Task Killed\n\n"
             result += f"Task ID: {task_id}\n"
             result += f"Process ID: {process_id}\n"
             result += f"Kill Result: {kill_result}\n\n"
-            
+
             if kill_result == "TERMINATED":
                 result += f"✅ Process terminated gracefully\n"
             elif kill_result == "FORCE_KILLED":
                 result += f"✅ Process force-killed (was unresponsive)\n"
             else:
                 result += f"⚠️ Unexpected result: {kill_result}\n"
-        
+
         # Optionally clean up files
         cleanup_cmd = f"rm -f {log_file} {pid_file} 2>/dev/null; echo 'Cleanup attempted'"
         stdin, stdout, stderr = client.exec_command(cleanup_cmd)
         cleanup_result = stdout.read().decode('utf-8').strip()
-        
+
         result += f"\n🧹 Cleanup: {cleanup_result}\n"
         result += f"   Removed: {log_file}\n"
         result += f"   Removed: {pid_file}\n"
-        
+
         return result
-        
+
     except Exception as e:
         return f"Error killing background task: {str(e)}"
-    
+
     finally:
         if client:
             client.close()
 
 
 @mcp.tool()
-def scp_upload(ctx: Context, remote_host: str, remote_user: str, remote_port: int,
-               local_file_path: str, remote_file_path: str) -> str:
+def scp_upload(ctx: Context,
+               remote_host: str,
+               remote_user: str,
+               remote_port: int,
+               local_file_path: str,
+               remote_file_path: str) -> str:
     """Upload a file to a remote host via SFTP (secure file transfer)
     
     Parameters:
@@ -1667,28 +1707,30 @@ def scp_upload(ctx: Context, remote_host: str, remote_user: str, remote_port: in
     - remote_port: The SSH port number (typically 22 or custom port like 34608)
     - local_file_path: Local path to the file to upload
     - remote_file_path: Remote path where the file should be saved
+
+    In case connection error like "Error reading SSH protocol banner" - use port2 or direct instance ip,port instead
     """
-    
+
     client = paramiko.SSHClient()
     sftp = None
-    
+
     try:
         # Check if local file exists
         if not os.path.exists(local_file_path):
             return f"❌ Error: Local file not found: {local_file_path}"
-        
+
         # Get file size for progress indication
         local_size = os.path.getsize(local_file_path)
-        
+
         # Connect (same setup as other SSH functions)
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+
         logger.info(f"Connecting to {remote_host}:{remote_port} as {remote_user}")
-        
+
         if not os.path.exists(SSH_KEY_FILE):
             return f"❌ Error: Private key file not found: {SSH_KEY_FILE}"
-        
+
         # Load private key
         try:
             private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_FILE)
@@ -1703,7 +1745,7 @@ def scp_upload(ctx: Context, remote_host: str, remote_user: str, remote_port: in
                         private_key = paramiko.DSSKey.from_private_key_file(SSH_KEY_FILE)
                     except:
                         return f"❌ Error loading private key: {str(key_error)}"
-        
+
         # Connect to the server
         client.connect(
             hostname=remote_host,
@@ -1712,12 +1754,12 @@ def scp_upload(ctx: Context, remote_host: str, remote_user: str, remote_port: in
             pkey=private_key,
             timeout=30
         )
-        
+
         logger.info("SSH connection successful, starting SFTP")
-        
+
         # Open SFTP session
         sftp = client.open_sftp()
-        
+
         # Create remote directory if it doesn't exist
         remote_dir = os.path.dirname(remote_file_path)
         if remote_dir:
@@ -1726,34 +1768,35 @@ def scp_upload(ctx: Context, remote_host: str, remote_user: str, remote_port: in
             except Exception:
                 # Directory creation failed, ignore error
                 pass
-        
+
         logger.info(f"Uploading {local_file_path} to {remote_file_path}")
-        
+
         # Upload the file
         sftp.put(local_file_path, remote_file_path)
-        
+
         # Verify upload by checking remote file size
         try:
             remote_stat = sftp.stat(remote_file_path)
             remote_size = remote_stat.st_size
         except Exception:
             remote_size = "unknown"
-        
+
         result = f"📤 File Upload Successful!\n\n"
         result += f"Local File: {local_file_path}\n"
         result += f"Remote File: {remote_file_path}\n"
         result += f"Local Size: {local_size:,} bytes\n"
-        result += f"Remote Size: {remote_size:,} bytes\n" if isinstance(remote_size, int) else f"Remote Size: {remote_size}\n"
+        result += f"Remote Size: {remote_size:,} bytes\n" if isinstance(remote_size,
+                                                                        int) else f"Remote Size: {remote_size}\n"
         result += f"Host: {remote_host}:{remote_port}\n"
         result += f"User: {remote_user}\n"
-        
+
         if isinstance(remote_size, int) and local_size == remote_size:
             result += "\n✅ File transfer verified successfully!"
         elif isinstance(remote_size, int):
             result += f"\n⚠️ Size mismatch detected (local: {local_size}, remote: {remote_size})"
-        
+
         return result
-        
+
     except FileNotFoundError:
         return f"❌ Error: Local file not found: {local_file_path}"
     except paramiko.AuthenticationException:
@@ -1762,7 +1805,7 @@ def scp_upload(ctx: Context, remote_host: str, remote_user: str, remote_port: in
         return f"❌ Error: SSH error occurred: {str(e)}"
     except Exception as e:
         return f"❌ Error: Upload failed: {str(e)}"
-    
+
     finally:
         if sftp:
             sftp.close()
@@ -1772,8 +1815,12 @@ def scp_upload(ctx: Context, remote_host: str, remote_user: str, remote_port: in
 
 
 @mcp.tool()
-def scp_download(ctx: Context, remote_host: str, remote_user: str, remote_port: int,
-                 remote_file_path: str, local_file_path: str) -> str:
+def scp_download(ctx: Context,
+                 remote_host: str,
+                 remote_user: str,
+                 remote_port: int,
+                 remote_file_path: str,
+                 local_file_path: str) -> str:
     """Download a file from a remote host via SFTP (secure file transfer)
     
     Parameters:
@@ -1782,26 +1829,28 @@ def scp_download(ctx: Context, remote_host: str, remote_user: str, remote_port: 
     - remote_port: The SSH port number (typically 22 or custom port like 34608)
     - remote_file_path: Remote path to the file to download
     - local_file_path: Local path where the file should be saved
+
+    In case connection error like "Error reading SSH protocol banner" - use port2 or direct instance ip,port instead
     """
-    
+
     client = paramiko.SSHClient()
     sftp = None
-    
+
     try:
         # Create local directory if it doesn't exist
         local_dir = os.path.dirname(local_file_path)
         if local_dir and not os.path.exists(local_dir):
             os.makedirs(local_dir, exist_ok=True)
-        
+
         # Connect (same setup as other SSH functions)
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+
         logger.info(f"Connecting to {remote_host}:{remote_port} as {remote_user}")
-        
+
         if not os.path.exists(SSH_KEY_FILE):
             return f"❌ Error: Private key file not found: {SSH_KEY_FILE}"
-        
+
         # Load private key
         try:
             private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_FILE)
@@ -1816,7 +1865,7 @@ def scp_download(ctx: Context, remote_host: str, remote_user: str, remote_port: 
                         private_key = paramiko.DSSKey.from_private_key_file(SSH_KEY_FILE)
                     except:
                         return f"❌ Error loading private key: {str(key_error)}"
-        
+
         # Connect to the server
         client.connect(
             hostname=remote_host,
@@ -1825,12 +1874,12 @@ def scp_download(ctx: Context, remote_host: str, remote_user: str, remote_port: 
             pkey=private_key,
             timeout=30
         )
-        
+
         logger.info("SSH connection successful, starting SFTP")
-        
+
         # Open SFTP session
         sftp = client.open_sftp()
-        
+
         # Check if remote file exists and get its size
         try:
             remote_stat = sftp.stat(remote_file_path)
@@ -1839,40 +1888,41 @@ def scp_download(ctx: Context, remote_host: str, remote_user: str, remote_port: 
             return f"❌ Error: Remote file not found: {remote_file_path}"
         except Exception as e:
             return f"❌ Error checking remote file: {str(e)}"
-        
+
         logger.info(f"Downloading {remote_file_path} to {local_file_path}")
-        
+
         # Download the file
         sftp.get(remote_file_path, local_file_path)
-        
+
         # Verify download by checking local file size
         try:
             local_size = os.path.getsize(local_file_path)
         except Exception:
             local_size = "unknown"
-        
+
         result = f"📥 File Download Successful!\n\n"
         result += f"Remote File: {remote_file_path}\n"
         result += f"Local File: {local_file_path}\n"
         result += f"Remote Size: {remote_size:,} bytes\n"
-        result += f"Local Size: {local_size:,} bytes\n" if isinstance(local_size, int) else f"Local Size: {local_size}\n"
+        result += f"Local Size: {local_size:,} bytes\n" if isinstance(local_size,
+                                                                      int) else f"Local Size: {local_size}\n"
         result += f"Host: {remote_host}:{remote_port}\n"
         result += f"User: {remote_user}\n"
-        
+
         if isinstance(local_size, int) and remote_size == local_size:
             result += "\n✅ File transfer verified successfully!"
         elif isinstance(local_size, int):
             result += f"\n⚠️ Size mismatch detected (remote: {remote_size}, local: {local_size})"
-        
+
         return result
-        
+
     except paramiko.AuthenticationException:
         return f"❌ Error: Authentication failed for {remote_user}@{remote_host}:{remote_port}"
     except paramiko.SSHException as e:
         return f"❌ Error: SSH error occurred: {str(e)}"
     except Exception as e:
         return f"❌ Error: Download failed: {str(e)}"
-    
+
     finally:
         if sftp:
             sftp.close()
@@ -1881,23 +1931,23 @@ def scp_download(ctx: Context, remote_host: str, remote_user: str, remote_port: 
         logger.info("SFTP and SSH connections closed")
 
 
-@mcp.tool()
-def prepare_instance(ctx: Context, instance_id: int) -> str:
-    """
-    Prepare instance, create user, disable sudo password and install packages
-    """
-    try:
-        host, port = get_instance_ssh_info(ctx, instance_id)
-        return _prepare_instance(host, port, USER_NAME)
-    except Exception as e:
-        return f"❌ Failed to prepare instance: {str(e)}"
+# @mcp.tool()
+# def prepare_instance(ctx: Context, instance_id: int) -> str:
+#     """
+#     Prepare instance, create user, disable sudo password and install packages
+#     """
+#     try:
+#         host, port = get_instance_ssh_info(ctx, instance_id)
+#         return _prepare_instance(host, port, USER_NAME)
+#     except Exception as e:
+#         return f"❌ Failed to prepare instance: {str(e)}"
 
 def main():
     """Run the MCP server"""
     try:
         # Validate configuration before starting
         validate_configuration()
-        
+
         import argparse
 
         parser = argparse.ArgumentParser(description="Vast.ai MCP Server")
@@ -1909,7 +1959,7 @@ def main():
         logger.info(f"Starting Vast.ai MCP server on {args.host}:{args.port}")
         logger.info(f"Using SSH key: {SSH_KEY_FILE}")
         logger.info(f"Using SSH public key: {SSH_KEY_PUBLIC_FILE}")
-        
+
         # Use the FastMCP object that was created earlier
         mcp.run()
     except Exception as e:
