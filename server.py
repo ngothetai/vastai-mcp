@@ -1708,6 +1708,8 @@ def scp_upload(ctx: Context,
     - local_file_path: Local path to the file to upload
     - remote_file_path: Remote path where the file should be saved
 
+    Use full path to the file, not just the filename.
+
     In case connection error like "Error reading SSH protocol banner" - use port2 or direct instance ip,port instead
     """
 
@@ -1829,6 +1831,8 @@ def scp_download(ctx: Context,
     - remote_port: The SSH port number (typically 22 or custom port like 34608)
     - remote_file_path: Remote path to the file to download
     - local_file_path: Local path where the file should be saved
+
+    Use full path to the file, not just the filename.
 
     In case connection error like "Error reading SSH protocol banner" - use port2 or direct instance ip,port instead
     """
