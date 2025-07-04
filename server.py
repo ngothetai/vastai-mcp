@@ -476,6 +476,28 @@ def filter_templates_by_name(templates: list[dict], search_name: str) -> List[Di
     
     return matching_templates
 
+
+def _sftp_makedirs(sftp, remote_path):
+    """Create directories recursively via SFTP"""
+    dirs = []
+    path = remote_path
+    while len(path) > 1:
+        dirs.append(path)
+        path = os.path.dirname(path)
+    
+    # Reverse to create from parent to child
+    dirs.reverse()
+    
+    for directory in dirs:
+        try:
+            sftp.stat(directory)
+        except FileNotFoundError:
+            try:
+                sftp.mkdir(directory)
+            except Exception:
+                # Might fail if parent doesn't exist, ignore and continue
+                pass
+
 # Create the MCP server
 mcp = FastMCP(
     "VastAI",
@@ -1627,6 +1649,231 @@ fi
     finally:
         if client:
             client.close()
+
+
+@mcp.tool()
+def scp_upload(ctx: Context, remote_host: str, remote_user: str, remote_port: int,
+               local_file_path: str, remote_file_path: str) -> str:
+    """Upload a file to a remote host via SFTP (secure file transfer)
+    
+    Parameters:
+    - remote_host: The hostname or IP address of the remote server
+    - remote_user: The username to connect as (e.g., 'root', 'ubuntu', 'ec2-user')
+    - remote_port: The SSH port number (typically 22 or custom port like 34608)
+    - local_file_path: Local path to the file to upload
+    - remote_file_path: Remote path where the file should be saved
+    """
+    
+    client = paramiko.SSHClient()
+    sftp = None
+    
+    try:
+        # Check if local file exists
+        if not os.path.exists(local_file_path):
+            return f"❌ Error: Local file not found: {local_file_path}"
+        
+        # Get file size for progress indication
+        local_size = os.path.getsize(local_file_path)
+        
+        # Connect (same setup as other SSH functions)
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        logger.info(f"Connecting to {remote_host}:{remote_port} as {remote_user}")
+        
+        if not os.path.exists(SSH_KEY_FILE):
+            return f"❌ Error: Private key file not found: {SSH_KEY_FILE}"
+        
+        # Load private key
+        try:
+            private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_FILE)
+        except Exception as key_error:
+            try:
+                private_key = paramiko.Ed25519Key.from_private_key_file(SSH_KEY_FILE)
+            except:
+                try:
+                    private_key = paramiko.ECDSAKey.from_private_key_file(SSH_KEY_FILE)
+                except:
+                    try:
+                        private_key = paramiko.DSSKey.from_private_key_file(SSH_KEY_FILE)
+                    except:
+                        return f"❌ Error loading private key: {str(key_error)}"
+        
+        # Connect to the server
+        client.connect(
+            hostname=remote_host,
+            port=remote_port,
+            username=remote_user,
+            pkey=private_key,
+            timeout=30
+        )
+        
+        logger.info("SSH connection successful, starting SFTP")
+        
+        # Open SFTP session
+        sftp = client.open_sftp()
+        
+        # Create remote directory if it doesn't exist
+        remote_dir = os.path.dirname(remote_file_path)
+        if remote_dir:
+            try:
+                _sftp_makedirs(sftp, remote_dir)
+            except Exception:
+                # Directory creation failed, ignore error
+                pass
+        
+        logger.info(f"Uploading {local_file_path} to {remote_file_path}")
+        
+        # Upload the file
+        sftp.put(local_file_path, remote_file_path)
+        
+        # Verify upload by checking remote file size
+        try:
+            remote_stat = sftp.stat(remote_file_path)
+            remote_size = remote_stat.st_size
+        except Exception:
+            remote_size = "unknown"
+        
+        result = f"📤 File Upload Successful!\n\n"
+        result += f"Local File: {local_file_path}\n"
+        result += f"Remote File: {remote_file_path}\n"
+        result += f"Local Size: {local_size:,} bytes\n"
+        result += f"Remote Size: {remote_size:,} bytes\n" if isinstance(remote_size, int) else f"Remote Size: {remote_size}\n"
+        result += f"Host: {remote_host}:{remote_port}\n"
+        result += f"User: {remote_user}\n"
+        
+        if isinstance(remote_size, int) and local_size == remote_size:
+            result += "\n✅ File transfer verified successfully!"
+        elif isinstance(remote_size, int):
+            result += f"\n⚠️ Size mismatch detected (local: {local_size}, remote: {remote_size})"
+        
+        return result
+        
+    except FileNotFoundError:
+        return f"❌ Error: Local file not found: {local_file_path}"
+    except paramiko.AuthenticationException:
+        return f"❌ Error: Authentication failed for {remote_user}@{remote_host}:{remote_port}"
+    except paramiko.SSHException as e:
+        return f"❌ Error: SSH error occurred: {str(e)}"
+    except Exception as e:
+        return f"❌ Error: Upload failed: {str(e)}"
+    
+    finally:
+        if sftp:
+            sftp.close()
+        if client:
+            client.close()
+        logger.info("SFTP and SSH connections closed")
+
+
+@mcp.tool()
+def scp_download(ctx: Context, remote_host: str, remote_user: str, remote_port: int,
+                 remote_file_path: str, local_file_path: str) -> str:
+    """Download a file from a remote host via SFTP (secure file transfer)
+    
+    Parameters:
+    - remote_host: The hostname or IP address of the remote server
+    - remote_user: The username to connect as (e.g., 'root', 'ubuntu', 'ec2-user')
+    - remote_port: The SSH port number (typically 22 or custom port like 34608)
+    - remote_file_path: Remote path to the file to download
+    - local_file_path: Local path where the file should be saved
+    """
+    
+    client = paramiko.SSHClient()
+    sftp = None
+    
+    try:
+        # Create local directory if it doesn't exist
+        local_dir = os.path.dirname(local_file_path)
+        if local_dir and not os.path.exists(local_dir):
+            os.makedirs(local_dir, exist_ok=True)
+        
+        # Connect (same setup as other SSH functions)
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        logger.info(f"Connecting to {remote_host}:{remote_port} as {remote_user}")
+        
+        if not os.path.exists(SSH_KEY_FILE):
+            return f"❌ Error: Private key file not found: {SSH_KEY_FILE}"
+        
+        # Load private key
+        try:
+            private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_FILE)
+        except Exception as key_error:
+            try:
+                private_key = paramiko.Ed25519Key.from_private_key_file(SSH_KEY_FILE)
+            except:
+                try:
+                    private_key = paramiko.ECDSAKey.from_private_key_file(SSH_KEY_FILE)
+                except:
+                    try:
+                        private_key = paramiko.DSSKey.from_private_key_file(SSH_KEY_FILE)
+                    except:
+                        return f"❌ Error loading private key: {str(key_error)}"
+        
+        # Connect to the server
+        client.connect(
+            hostname=remote_host,
+            port=remote_port,
+            username=remote_user,
+            pkey=private_key,
+            timeout=30
+        )
+        
+        logger.info("SSH connection successful, starting SFTP")
+        
+        # Open SFTP session
+        sftp = client.open_sftp()
+        
+        # Check if remote file exists and get its size
+        try:
+            remote_stat = sftp.stat(remote_file_path)
+            remote_size = remote_stat.st_size
+        except FileNotFoundError:
+            return f"❌ Error: Remote file not found: {remote_file_path}"
+        except Exception as e:
+            return f"❌ Error checking remote file: {str(e)}"
+        
+        logger.info(f"Downloading {remote_file_path} to {local_file_path}")
+        
+        # Download the file
+        sftp.get(remote_file_path, local_file_path)
+        
+        # Verify download by checking local file size
+        try:
+            local_size = os.path.getsize(local_file_path)
+        except Exception:
+            local_size = "unknown"
+        
+        result = f"📥 File Download Successful!\n\n"
+        result += f"Remote File: {remote_file_path}\n"
+        result += f"Local File: {local_file_path}\n"
+        result += f"Remote Size: {remote_size:,} bytes\n"
+        result += f"Local Size: {local_size:,} bytes\n" if isinstance(local_size, int) else f"Local Size: {local_size}\n"
+        result += f"Host: {remote_host}:{remote_port}\n"
+        result += f"User: {remote_user}\n"
+        
+        if isinstance(local_size, int) and remote_size == local_size:
+            result += "\n✅ File transfer verified successfully!"
+        elif isinstance(local_size, int):
+            result += f"\n⚠️ Size mismatch detected (remote: {remote_size}, local: {local_size})"
+        
+        return result
+        
+    except paramiko.AuthenticationException:
+        return f"❌ Error: Authentication failed for {remote_user}@{remote_host}:{remote_port}"
+    except paramiko.SSHException as e:
+        return f"❌ Error: SSH error occurred: {str(e)}"
+    except Exception as e:
+        return f"❌ Error: Download failed: {str(e)}"
+    
+    finally:
+        if sftp:
+            sftp.close()
+        if client:
+            client.close()
+        logger.info("SFTP and SSH connections closed")
 
 
 @mcp.tool()
