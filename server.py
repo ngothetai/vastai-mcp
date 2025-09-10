@@ -513,7 +513,6 @@ def _sftp_makedirs(sftp, remote_path):
 # Create the MCP server
 mcp = FastMCP(
     "VastAI",
-    description="Vast.ai GPU cloud platform integration through the Model Context Protocol",
     lifespan=server_lifespan
 )
 
